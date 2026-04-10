@@ -1,161 +1,139 @@
-# VFX SOTA Monitor 구현 플랜
+# VFX SOTA Monitor — 최종 구현 플랜 v2
 
 ## Context
-Red Cat Gang VFX팀의 60+ AI 모델 SOTA 로드맵을 자동 모니터링하는 시스템 구축. ArxivDigest를 베이스로 arXiv + GitHub + HuggingFace를 매일 스캔하고, Gemma 4 26B(Ollama)로 관련성을 판단하여 일일 리포트 생성 및 로드맵 자동 업데이트.
 
-## 핵심 결정
+Red Cat Gang VFX팀(20-30명)이 매일 AI 관련 SOTA를 자동 추적하는 시스템. **나중에 [glocal30Hub](https://github.com/jsdavid88-dsu/glocal30Hub) 통합 포털에 모듈로 편입 예정**이므로 스택을 완전히 일치시킴.
 
-1. **ArxivDigest 포크가 아닌 새 프로젝트**: 원본이 `openai==0.27.8` (폐기 API) 사용, 스크래핑 로직(40줄)만 차용
-2. **GitHub Actions는 keyword_only 모드**: GPU 없으므로 키워드 필터링만, LLM 스코어링은 로컬 전용
-3. **단일 일일 마크다운 리포트**: 10개 카테고리 섹션으로 구분
-4. **로드맵은 append-only**: 수동 편집 보존, 날짜별 섹션 추가
+## 확정된 결정사항
+
+1. ✅ **스택**: glocal30Hub와 100% 동일 (React 19 + FastAPI + PostgreSQL)
+2. ✅ **인증**: 자체 구현 X → 나중에 Hub의 OAuth 재사용
+3. ✅ **호스팅**: 같은 서버 (Docker Compose 패턴 동일)
+4. ✅ **댓글**: DB 스키마는 지금 준비, UI는 나중 phase
+5. ✅ **개발 방식**: 백엔드 + 프론트엔드 병렬
+6. ✅ **데이터**: 메타데이터만 (코드/논문 본문 X, 링크만)
+7. ✅ **소스**: arXiv, GitHub, HuggingFace, Reddit(PRAW), X(fxtwitter)
+8. ✅ **LLM**: Gemma 4 26B via Ollama (RTX 4090 로컬)
+
+## 기술 스택 (glocal30Hub 일치)
+
+### Frontend
+- React 19 + Vite 7 + TypeScript 5.9
+- Tailwind CSS 4 + @tailwindcss/vite
+- react-router-dom 7
+- 추가: @tanstack/react-query, reactflow, recharts, lucide-react
+
+### Backend
+- FastAPI 0.115 + uvicorn
+- SQLAlchemy 2 async + asyncpg + Alembic
+- pydantic 2 + pydantic-settings
+- 추가: apscheduler, beautifulsoup4, PyGithub, huggingface-hub, praw, openai>=1.0
+
+### Infrastructure
+- PostgreSQL 16 (Docker)
+- Docker Compose (glocal30Hub 패턴)
+- Ollama (호스트, RTX 4090)
 
 ## 프로젝트 구조
 
 ```
-vfx-sota-monitor/               ← G:/다른 컴퓨터/.../가기연/sota-monitor/vfx-sota-monitor/
-├── config.yaml                  # 10개 VFX 카테고리 + 키워드 + 설정
-├── requirements.txt
+vfx-sota-monitor/
+├── docker-compose.yml
 ├── .env.example
-├── .github/workflows/
-│   └── daily_monitor.yaml       # 매일 01:00 UTC (10:00 KST) 크론
-├── src/
-│   ├── main.py                  # 오케스트레이터
-│   ├── config.py                # 설정 로더
-│   ├── sources/
-│   │   ├── arxiv.py             # arXiv 스크래핑 (ArxivDigest에서 차용)
-│   │   ├── github_source.py     # GitHub 레포 검색 (PyGithub)
-│   │   └── huggingface.py       # HuggingFace 모델 검색
-│   ├── scoring/
-│   │   ├── keyword.py           # 키워드 매칭 (GPU 불필요)
-│   │   └── llm.py               # Ollama Gemma 4 26B 스코어링
-│   ├── storage/
-│   │   └── db.py                # SQLite 중복 방지
-│   └── reporting/
-│       ├── daily_report.py      # 일일 마크다운 생성
-│       └── roadmap_updater.py   # 로드맵 자동 업데이트
-├── data/
-│   ├── seen.db                  # SQLite (gitignored)
-│   └── reports/                 # 일일 리포트 (커밋됨)
-├── roadmap.md                   # 마스터 로드맵
-└── tests/
+├── README.md
+├── PLAN.md
+│
+├── backend/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── alembic.ini
+│   ├── alembic/versions/
+│   ├── seed.py
+│   └── app/
+│       ├── main.py
+│       ├── config.py
+│       ├── database.py
+│       ├── models/
+│       │   ├── category.py
+│       │   ├── item.py
+│       │   ├── lineage.py
+│       │   └── comment.py
+│       ├── schemas/
+│       ├── routers/
+│       │   ├── categories.py
+│       │   ├── items.py
+│       │   ├── lineage.py
+│       │   ├── comments.py
+│       │   ├── stats.py
+│       │   └── search.py
+│       ├── sources/
+│       │   ├── base.py
+│       │   ├── arxiv_src.py
+│       │   ├── github_src.py
+│       │   ├── huggingface_src.py
+│       │   ├── reddit_src.py
+│       │   └── x_fxtwitter.py
+│       ├── scoring/
+│       │   ├── keyword.py
+│       │   └── llm_ollama.py
+│       └── tasks/
+│           ├── scheduler.py
+│           └── daily_monitor.py
+│
+├── frontend/
+│   ├── Dockerfile
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── index.html
+│   └── src/
+│       ├── main.tsx
+│       ├── App.tsx
+│       ├── api/
+│       ├── pages/
+│       │   ├── Dashboard.tsx
+│       │   ├── CategoryDetail.tsx
+│       │   ├── ItemDetail.tsx
+│       │   ├── Timeline.tsx
+│       │   └── LineageGraph.tsx
+│       ├── components/
+│       └── types/
+│
+└── .github/workflows/
+    └── daily_monitor.yaml
 ```
 
-## 데이터 흐름
+## DB 스키마 (핵심)
 
-```
-매일 크론 (GitHub Actions 또는 로컬)
-  │
-  ▼
-소스 수집: arXiv(BS4) + GitHub(PyGithub) + HuggingFace(hf_hub)
-  │
-  ▼
-카테고리별 처리 (10개 VFX 카테고리 루프):
-  키워드 필터 → SQLite 중복 제거 → [LLM 스코어링 (로컬만)]
-  │
-  ▼
-출력: 일일 리포트 .md + 로드맵 append (score ≥ 8만)
-  │
-  ▼
-GitHub Actions: git commit + push
-```
+- `categories` — 10개 VFX 카테고리 (slug, name_ko, keywords, github_topics, subreddits, x_accounts)
+- `items` — 통합 아이템 (source: arxiv/github/huggingface/reddit/x), keyword_score, llm_score, priority
+- `item_categories` — M:N 연결
+- `lineage_edges` — 기술 계보 (parent_id, child_id, relationship)
+- `comments` — Phase 2 UI용 (스키마만 준비)
+- `crawl_runs` — 크롤 이력
 
-## 주요 모듈 상세
+## 프론트엔드 페이지
 
-### 1. `sources/arxiv.py`
-- ArxivDigest `download_new_papers.py` 11-48줄 BeautifulSoup 파서 차용
-- `fetch_new_papers(field="cs") -> list[dict]`
-- 표준화 스키마: `{source, id, title, authors, abstract, url, date, subjects}`
+1. `/` — 대시보드 (카테고리 그리드 + 이번 주 하이라이트)
+2. `/category/:slug` — 카테고리 상세 (SOTA + 타임라인 + 아이템 리스트)
+3. `/item/:id` — 아이템 상세 (메타 + 관련 + 소셜 반응)
+4. `/timeline` — 전체 타임라인 (10개 레인)
+5. `/graph` — 기술 계보 그래프 (reactflow)
 
-### 2. `sources/github_source.py`
-- PyGithub로 카테고리별 키워드+토픽 검색
-- `fetch_new_repos(keywords, topics, lookback_days=1) -> list[dict]`
-- 레이트 리밋: 카테고리간 2.5초 sleep
+## 구현 Phase (병렬 개발)
 
-### 3. `sources/huggingface.py`
-- `HfApi().list_models(search=keyword, sort="lastModified")`
-- `fetch_new_models(keywords, tags, lookback_days=1) -> list[dict]`
+| Phase | 내용 |
+|-------|------|
+| **1. 뼈대 + MVP** | Docker + FastAPI + Vite + 기본 라우트 + Dashboard (가짜 데이터) + 10카테고리 시드 |
+| **2. 데이터 수집** | 5개 소스 + 키워드 스코어링 + APScheduler |
+| **3. LLM 통합** | Ollama Gemma 4 26B + 프롬프트 + 자동 분류/우선순위 |
+| **4. 프론트 고도화** | CategoryDetail + ItemDetail + 필터 + 검색 + Timeline |
+| **5. 기술 계보** | Semantic Scholar + reactflow + LineageGraph |
+| **6. 댓글 UI + 마무리** | 댓글 + 에러 처리 + Hub 통합 어댑터 |
 
-### 4. `scoring/keyword.py`
-- 제목+초록에서 키워드 매칭 (word boundary regex)
-- `score_by_keywords(items, keywords) -> list[dict]` — keyword_score 필드 추가
+## Hub 통합 준비
 
-### 5. `scoring/llm.py`
-- `openai.OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")`
-- 모델: `gemma4:26b`, 배치 4개씩, temperature 0.3
-- 프롬프트: VFX 도메인 특화 관련성 판단
-- `score_by_llm(items, category, config) -> list[dict]` — llm_score 필드 추가
-
-### 6. `storage/db.py`
-- SQLite 3개 테이블 (papers, repos, models)
-- 복합키: `(source, id, category)` — 같은 아이템이 여러 카테고리에 나올 수 있음
-- `filter_unseen(conn, items) -> list[dict]`
-
-### 7. `reporting/daily_report.py`
-- 한국어 일일 마크다운 — 카테고리별 테이블
-- `data/reports/YYYY-MM-DD.md`
-
-### 8. `reporting/roadmap_updater.py`
-- score ≥ 8인 아이템만 `roadmap.md` 하단에 날짜 섹션 append
-
-## config.yaml 카테고리 (10개)
-
-| ID | 이름 | 핵심 키워드 |
-|----|------|-------------|
-| video_matting | 비디오 매팅 | video matting, alpha matte, trimap-free |
-| video_removal | 비디오 리무벌 | video inpainting, object removal, VOID |
-| face_parsing | 페이스 파싱 | face parsing, face segmentation, SegFace |
-| point_tracking | 포인트 트래킹 | point tracking, TAP, CoTracker |
-| head_swap | 헤드 스왑 | head swap, face swap, face reenactment |
-| 3dgs | 3D 가우시안 | gaussian splatting, 3DGS, neural rendering |
-| beauty | 뷰티 보정 | face restoration, skin retouching, beauty |
-| korean_text_edit | 한글 텍스트 | scene text editing, korean OCR, hangul |
-| ref_search | Ref 검색 | image retrieval, visual search, CLIP |
-| qc_program | QC 프로그램 | video quality, artifact detection, IQA |
-
-## GitHub Actions Workflow
-
-- 크론: `0 1 * * 1-5` (월-금 10:00 KST)
-- `python src/main.py --mode keyword_only`
-- seen.db는 `actions/cache`로 유지
-- 리포트를 자동 커밋+푸시
-- 리포 주인: `jsdavid88-dsu`
-
-## 구현 순서
-
-| Phase | 기간 | 작업 |
-|-------|------|------|
-| **1. MVP** | Day 1-2 | config + arxiv 스크래핑 + 키워드 스코어링 + SQLite + 리포트 + main.py |
-| **2. 소스 확장** | Day 3-4 | GitHub + HuggingFace 소스 추가 |
-| **3. LLM** | Day 5 | Ollama Gemma 4 연동 + 프롬프트 튜닝 |
-| **4. 마무리** | Day 6 | 로드맵 업데이터 + 풀 config + 에러처리 |
-| **5. 배포** | Day 7 | GitHub Actions + 리포 세팅 + 테스트 |
-
-## 참조 파일 (ArxivDigest에서 차용)
-
-- `ArxivDigest-base/src/download_new_papers.py:11-48` — BS4 스크래핑 코어
-- `ArxivDigest-base/src/relevancy.py:20-35` — 프롬프트 인코딩 패턴
-- `ArxivDigest-base/src/relevancy.py:38-78` — 응답 파싱 패턴
-- `ArxivDigest-base/src/relevancy_prompt.txt` — 프롬프트 템플릿 참조
-
-## 검증 방법
-
-1. `python src/main.py --mode keyword_only` — 키워드만으로 전체 파이프라인 테스트
-2. `python src/main.py --mode ollama` — Gemma 4 로컬 스코어링 테스트
-3. `data/reports/YYYY-MM-DD.md` 파일 확인 — 카테고리별 결과 존재 여부
-4. `roadmap.md` 하단 — append 정상 동작 확인
-5. GitHub Actions `workflow_dispatch` — 수동 실행 후 커밋 확인
-6. 2회차 실행 시 중복 아이템 없는지 확인 (SQLite dedup)
-
-## 의존성
-
-```
-PyYAML>=6.0
-beautifulsoup4>=4.12
-openai>=1.0
-PyGithub>=2.0
-huggingface-hub>=0.20
-tqdm>=4.65
-pytz>=2023.3
-python-dotenv>=1.0
-```
+- **인증 어댑터**: `backend/app/auth.py`에 JWT 검증만, 발급은 Hub
+- **DB**: 같은 Postgres에 `vfx_` 접두사 테이블로 편입 가능
+- **프론트**: Hub 내 탭으로 컴포넌트 이식 가능하도록 독립성 유지
+- **API**: Hub의 `/modules/vfx/*` 프록시로 라우팅 가능
