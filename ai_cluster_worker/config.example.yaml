@@ -1,0 +1,20 @@
+# AI Cluster Worker 설정
+# config.yaml로 복사 후 수정
+
+# 메인 PC의 FastAPI 엔드포인트
+# Tailscale 사용 시: http://100.x.x.x:8001
+# 같은 LAN이면: http://192.168.x.x:8001
+MAIN_PC_URL: http://localhost:8001
+
+# 메인 PC의 .env에 있는 ADMIN_TOKEN과 동일하게
+ADMIN_TOKEN: change-me-to-random-string
+
+# Ollama 설정
+OLLAMA_BASE_URL: http://localhost:11434/v1
+OLLAMA_MODEL: gemma4:26b
+OLLAMA_TIMEOUT: 300
+
+# 배치 설정
+BATCH_SIZE: 4           # 한 번에 몇 개씩 프롬프트에 넣을지
+MAX_ITEMS_PER_RUN: 50   # 한 번 실행에서 최대 몇 개 처리할지
+TEMPERATURE: 0.3

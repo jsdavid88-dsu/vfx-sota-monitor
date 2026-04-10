@@ -1,6 +1,10 @@
 # Environment
 .env
 *.env
+!.env.example
+
+# Config with secrets
+ai_cluster_worker/config.yaml
 
 # Python
 __pycache__/
@@ -44,11 +48,11 @@ dist-ssr/
 *.swo
 .DS_Store
 
-# Data
-data/
-*.db
-*.sqlite
-*.sqlite3
+# SQLite DB (local data, not committed)
+backend/data/*.db
+backend/data/*.sqlite
+backend/data/*.sqlite3
+!backend/data/.gitkeep
 
 # Logs
 *.log
@@ -61,5 +65,5 @@ backend/alembic/versions/__pycache__/
 frontend/dist/
 frontend/build/
 
-# Archive (not tracked)
+# Base repo (reference only)
 ArxivDigest-base/
