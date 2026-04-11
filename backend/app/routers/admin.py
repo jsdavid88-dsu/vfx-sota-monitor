@@ -13,7 +13,9 @@ from app.config import settings
 from app.database import get_db
 from app.models import CrawlRun, Item, ItemCategory
 from app.schemas.admin import CrawlResult, PendingItem, ScoreUpdate, ScoreUpdateResult
+from app.tasks.code_linker import link_codes_for_arxiv_items
 from app.tasks.crawler import SOURCE_LABELS, crawl_all, crawl_source
+from app.tasks.lineage_builder import build_lineage_for_new_items
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -101,6 +103,36 @@ async def trigger_crawl_all(
     """Trigger all sources (fire-and-forget)."""
     background.add_task(crawl_all)
     return {"status": "started", "sources": SOURCE_LABELS}
+
+
+@router.post("/link-codes")
+async def trigger_link_codes(
+    background: BackgroundTasks,
+    max_items: int = Query(20, le=100),
+    wait: bool = Query(False),
+    _: None = Depends(verify_admin_token),
+):
+    """Scan recent arXiv items and attach matching GitHub repos."""
+    if wait:
+        total = await link_codes_for_arxiv_items(max_items=max_items)
+        return {"status": "done", "links_added": total}
+    background.add_task(link_codes_for_arxiv_items, max_items)
+    return {"status": "started"}
+
+
+@router.post("/build-lineage")
+async def trigger_build_lineage(
+    background: BackgroundTasks,
+    max_items: int = Query(20, le=100),
+    wait: bool = Query(False),
+    _: None = Depends(verify_admin_token),
+):
+    """Build lineage edges for arXiv items via Semantic Scholar."""
+    if wait:
+        total = await build_lineage_for_new_items(max_items=max_items)
+        return {"status": "done", "edges_added": total}
+    background.add_task(build_lineage_for_new_items, max_items)
+    return {"status": "started"}
 
 
 @router.get("/runs")
