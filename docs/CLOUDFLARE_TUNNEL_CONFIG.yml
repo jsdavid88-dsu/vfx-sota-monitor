@@ -1,0 +1,35 @@
+# Cloudflare Tunnel 설정 예시
+# 위치: C:\Users\<user>\.cloudflared\config.yml
+#
+# 사용 전 수정:
+#   - <your-tunnel-id>: cloudflared tunnel create로 생성
+#   - yourdomain.com: 본인 도메인
+#   - credentials-file 경로
+
+tunnel: <your-tunnel-id>
+credentials-file: C:\Users\<user>\.cloudflared\<your-tunnel-id>.json
+
+# 원본 → 대상 매핑 (순서 중요)
+ingress:
+  # 프론트엔드 (팀원이 접속하는 URL)
+  - hostname: vfx-sota.yourdomain.com
+    service: http://localhost:3001
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+
+  # API (프론트가 XHR로 호출)
+  - hostname: api.vfx-sota.yourdomain.com
+    service: http://localhost:8001
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+
+  # 모든 다른 요청은 404
+  - service: http_status:404
+
+# 옵션: 로그 레벨
+loglevel: info
+
+# 옵션: 자동 업데이트 체크 (비활성화)
+no-autoupdate: true
