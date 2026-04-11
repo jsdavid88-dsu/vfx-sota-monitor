@@ -123,7 +123,7 @@ async def _persist_items(
                 abstract=(item.abstract or "")[:10000] or None,
                 authors=(item.authors or None),
                 published_at=item.published_at,
-                metadata=item.metadata or {},
+                item_metadata=item.metadata or {},
                 keyword_score=score.keyword_score,
                 llm_score=0,
                 priority=infer_priority(score.keyword_score, item.metadata),
@@ -134,7 +134,7 @@ async def _persist_items(
                 set_=dict(
                     title=item.title[:2000] if item.title else "(no title)",
                     abstract=(item.abstract or "")[:10000] or None,
-                    metadata=item.metadata or {},
+                    item_metadata=item.metadata or {},
                     keyword_score=score.keyword_score,
                     priority=infer_priority(score.keyword_score, item.metadata),
                 ),

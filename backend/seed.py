@@ -207,7 +207,7 @@ async def seed():
             print(f"[add]  {cat_data['slug']} - {cat_data['name_ko']}")
 
         await db.commit()
-        print(f"\n✓ Seeded {len(CATEGORIES)} categories.")
+        print(f"\n[OK] Seeded {len(CATEGORIES)} categories.")
 
 
 if __name__ == "__main__":

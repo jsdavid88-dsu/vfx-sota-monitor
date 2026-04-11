@@ -47,7 +47,7 @@ def upgrade() -> None:
         sa.Column("authors", sa.Text()),
         sa.Column("published_at", sa.DateTime(timezone=True)),
         sa.Column("discovered_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("metadata", sa.JSON(), default=dict),
+        sa.Column("item_metadata", sa.JSON(), default=dict),
         sa.Column("keyword_score", sa.Integer(), default=0),
         sa.Column("llm_score", sa.Integer(), default=0),
         sa.Column("llm_reason", sa.Text()),

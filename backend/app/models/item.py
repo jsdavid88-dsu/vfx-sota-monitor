@@ -28,7 +28,8 @@ class Item(Base):
     discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Flexible metadata (stars, downloads, likes, subreddit, author_handle, etc.)
-    item_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+    # Column name differs from `metadata` to avoid collision with SQLAlchemy's Table.metadata
+    item_metadata: Mapped[dict] = mapped_column("item_metadata", JSON, default=dict)
 
     # Scoring
     keyword_score: Mapped[int] = mapped_column(Integer, default=0)
