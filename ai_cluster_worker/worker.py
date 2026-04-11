@@ -51,10 +51,12 @@ def load_config() -> dict[str, Any]:
 
     cfg.setdefault("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     cfg.setdefault("OLLAMA_MODEL", "gemma4:26b")
-    cfg.setdefault("OLLAMA_TIMEOUT", 300)
-    cfg.setdefault("BATCH_SIZE", 4)
+    cfg.setdefault("OLLAMA_TIMEOUT", 600)
+    # 아르카 페르소나 + 풍부한 출력 → 배치 작게, max_tokens 크게
+    cfg.setdefault("BATCH_SIZE", 2)
     cfg.setdefault("MAX_ITEMS_PER_RUN", 50)
-    cfg.setdefault("TEMPERATURE", 0.3)
+    cfg.setdefault("TEMPERATURE", 0.35)
+    cfg.setdefault("MAX_TOKENS", 6000)
     return cfg
 
 
@@ -99,7 +101,7 @@ def score_batch(client: OpenAI, cfg: dict, batch: list[dict]) -> list[dict]:
                 {"role": "user", "content": user_msg},
             ],
             temperature=cfg["TEMPERATURE"],
-            max_tokens=2048,
+            max_tokens=cfg["MAX_TOKENS"],
             timeout=cfg["OLLAMA_TIMEOUT"],
         )
     except OpenAIError as e:

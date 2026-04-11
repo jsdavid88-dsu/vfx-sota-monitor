@@ -1,5 +1,5 @@
 """Admin schemas — used by AI Cluster Worker + manual ops."""
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PendingItem(BaseModel):
@@ -18,6 +18,8 @@ class ScoreUpdate(BaseModel):
     llm_score: int
     llm_reason: str | None = None
     priority: str | None = None  # P0/P1/P2/P3/WATCH
+    # Rich analysis from Arca persona — stored in item_metadata.arca
+    analysis: dict | None = Field(default=None)
 
 
 class ScoreUpdateResult(BaseModel):

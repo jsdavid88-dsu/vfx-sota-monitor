@@ -7,6 +7,7 @@ import SourceBadge from "../components/SourceBadge";
 import PriorityBadge from "../components/PriorityBadge";
 import LineageFlow from "../components/LineageFlow";
 import CommentSection from "../components/CommentSection";
+import ArcaPanel, { type ArcaAnalysis } from "../components/ArcaPanel";
 
 export default function ItemDetail() {
   const { id } = useParams<{ id: string }>();
@@ -27,6 +28,9 @@ export default function ItemDetail() {
   if (!item) return <div className="text-neutral-500">Loading...</div>;
   const score = item.llm_score || item.keyword_score;
   const hasLineage = lineage && lineage.nodes.length > 1;
+  const arca = (item.metadata as Record<string, unknown> | undefined)?.arca as
+    | ArcaAnalysis
+    | undefined;
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -85,6 +89,8 @@ export default function ItemDetail() {
           </a>
         </div>
       </article>
+
+      {arca && <ArcaPanel analysis={arca} />}
 
       {item.category_slugs.length > 0 && (
         <div>

@@ -18,9 +18,16 @@ function getCodeLinks(item: Item): CodeLink[] {
   return [];
 }
 
+function getArcaVerdict(item: Item): string | null {
+  const md = item.metadata as Record<string, unknown> | undefined;
+  const arca = md?.arca as { verdict?: string } | undefined;
+  return arca?.verdict || null;
+}
+
 export default function ItemCard({ item }: { item: Item }) {
   const score = item.llm_score || item.keyword_score;
   const codeLinks = getCodeLinks(item);
+  const verdict = getArcaVerdict(item);
 
   return (
     <Link
@@ -52,9 +59,13 @@ export default function ItemCard({ item }: { item: Item }) {
 
       <h3 className="text-sm font-semibold text-neutral-100 mb-1 line-clamp-2">{item.title}</h3>
 
-      {item.abstract && (
+      {verdict ? (
+        <p className="text-xs text-brand-300 line-clamp-2 mb-2 italic">
+          💭 {verdict}
+        </p>
+      ) : item.abstract ? (
         <p className="text-xs text-neutral-400 line-clamp-2 mb-2">{item.abstract}</p>
-      )}
+      ) : null}
 
       {codeLinks.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">

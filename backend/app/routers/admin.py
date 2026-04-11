@@ -60,7 +60,11 @@ async def score_update(
     _: None = Depends(verify_admin_token),
     db: AsyncSession = Depends(get_db),
 ):
-    """Apply LLM scoring results from AI Cluster Worker."""
+    """Apply LLM scoring results from AI Cluster Worker.
+
+    Rich `analysis` payload (verdict/practical_value/lineage/translation/warning)
+    from the Arca persona is stored in item_metadata.arca.
+    """
     count = 0
     for u in updates:
         item = await db.get(Item, u.id)
@@ -71,6 +75,12 @@ async def score_update(
             item.llm_reason = u.llm_reason[:4000]
         if u.priority:
             item.priority = u.priority
+
+        if u.analysis:
+            md = dict(item.item_metadata or {})
+            md["arca"] = u.analysis
+            item.item_metadata = md
+
         count += 1
     await db.commit()
     return ScoreUpdateResult(updated=count)
