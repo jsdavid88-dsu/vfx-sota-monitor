@@ -1,20 +1,24 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { fetchCategory } from "../api/categories";
-import { fetchItems } from "../api/items";
+import { fetchItems, type ItemFilters } from "../api/items";
 import ItemCard from "../components/ItemCard";
+import FilterPanel from "../components/FilterPanel";
 
 export default function CategoryDetail() {
   const { slug } = useParams<{ slug: string }>();
+  const [filters, setFilters] = useState<ItemFilters>({ sort: "discovered" });
+
   const { data: category } = useQuery({
     queryKey: ["category", slug],
     queryFn: () => fetchCategory(slug!),
     enabled: !!slug,
   });
   const { data: items = [] } = useQuery({
-    queryKey: ["items", { category: slug }],
-    queryFn: () => fetchItems({ category: slug, limit: 50 }),
+    queryKey: ["items", { category: slug, ...filters }],
+    queryFn: () => fetchItems({ ...filters, category: slug, limit: 100 }),
     enabled: !!slug,
   });
 
@@ -54,7 +58,9 @@ export default function CategoryDetail() {
 
         {category.current_sota.length > 0 && (
           <div className="mt-4 pt-4 border-t border-neutral-800">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase mb-2">현재 SOTA</div>
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase mb-2">
+              현재 SOTA
+            </div>
             <div className="flex flex-wrap gap-2">
               {category.current_sota.map((sota) => (
                 <span
@@ -69,13 +75,15 @@ export default function CategoryDetail() {
         )}
       </header>
 
+      <FilterPanel filters={filters} onChange={setFilters} />
+
       <section>
         <h2 className="text-sm font-semibold text-neutral-300 mb-3">
           발견 이력 ({items.length})
         </h2>
         {items.length === 0 ? (
           <div className="rounded-xl border border-dashed border-neutral-800 p-8 text-center text-sm text-neutral-500">
-            아직 수집된 아이템이 없습니다.
+            조건에 맞는 아이템이 없습니다
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">

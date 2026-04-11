@@ -1,11 +1,21 @@
 import { apiGet } from "./client";
 import type { Item } from "../types";
 
+export type SortKey =
+  | "discovered"
+  | "discovered_asc"
+  | "published"
+  | "score"
+  | "keyword_score"
+  | "priority";
+
 export type ItemFilters = {
   source?: string;
   priority?: string;
   category?: string;
   since?: string;
+  min_score?: number;
+  sort?: SortKey;
   limit?: number;
   offset?: number;
 };
@@ -13,7 +23,7 @@ export type ItemFilters = {
 export const fetchItems = (filters: ItemFilters = {}) => {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
-    if (v !== undefined && v !== "") params.append(k, String(v));
+    if (v !== undefined && v !== "" && v !== null) params.append(k, String(v));
   });
   const q = params.toString();
   return apiGet<Item[]>(`/items${q ? `?${q}` : ""}`);

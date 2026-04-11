@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import admin, categories, items, stats
+from app.routers import admin, categories, items, search, stats
 from app.tasks import shutdown_scheduler, start_scheduler
 
 logging.basicConfig(
@@ -50,6 +50,7 @@ app.add_middleware(
 
 app.include_router(categories.router, prefix=settings.api_prefix)
 app.include_router(items.router, prefix=settings.api_prefix)
+app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(stats.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
 
