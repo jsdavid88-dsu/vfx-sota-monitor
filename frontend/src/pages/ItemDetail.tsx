@@ -6,6 +6,7 @@ import { fetchItemLineage } from "../api/lineage";
 import SourceBadge from "../components/SourceBadge";
 import PriorityBadge from "../components/PriorityBadge";
 import LineageFlow from "../components/LineageFlow";
+import CommentSection from "../components/CommentSection";
 
 export default function ItemDetail() {
   const { id } = useParams<{ id: string }>();
@@ -111,10 +112,7 @@ export default function ItemDetail() {
         </section>
       )}
 
-      {/* Phase 6: 댓글 영역 예정 */}
-      <div className="rounded-xl border border-dashed border-neutral-800 p-6 text-center">
-        <p className="text-sm text-neutral-500">💬 댓글 기능 (Phase 6 예정)</p>
-      </div>
+      <CommentSection itemId={item.id} />
     </div>
   );
 }
