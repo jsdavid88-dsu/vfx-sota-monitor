@@ -1,0 +1,62 @@
+# VFX SOTA Monitor 피드 쿼리 설정
+# 이 파일을 수정하면 다음 feed_crawler 실행부터 반영됩니다.
+
+# Firecrawl /search로 보낼 쿼리 목록
+firecrawl_queries:
+  - query: "comfyui workflow tutorial 2026"
+    tags: [comfyui, workflow, tutorial]
+    limit: 5
+
+  - query: "gaussian splatting unreal engine production"
+    tags: [3dgs, production, tutorial]
+    limit: 5
+
+  - query: "animatediff lora tutorial"
+    tags: [ai-video, animatediff, lora]
+    limit: 5
+
+  - query: "wan animate face swap comfyui"
+    tags: [head-swap, comfyui, wan]
+    limit: 5
+
+  - query: "nuke python tutorial vfx"
+    tags: [nuke, vfx, pipeline]
+    limit: 5
+
+  - query: "stable video diffusion workflow"
+    tags: [ai-video, svd, workflow]
+    limit: 5
+
+  - query: "ai rotoscoping comfyui"
+    tags: [matting, rotoscoping, comfyui]
+    limit: 5
+
+  - query: "flux lora training vfx"
+    tags: [flux, lora, training]
+    limit: 5
+
+# Reddit 서브레딧과 키워드
+reddit:
+  subreddits:
+    - comfyui
+    - StableDiffusion
+    - vfx
+    - aivideo
+    - GaussianSplatting
+    - animation
+    - computervision
+    - editors
+  # 각 서브레딧에서 이 키워드를 포함하는 글만
+  keywords:
+    - comfyui
+    - workflow
+    - gaussian splatting
+    - animation
+    - ai video
+    - lora
+    - vfx
+    - pipeline
+    - tutorial
+    - wan animate
+  days_back: 3
+  max_per_sub: 15

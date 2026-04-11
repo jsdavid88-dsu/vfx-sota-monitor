@@ -36,5 +36,9 @@ class Settings(BaseSettings):
     # Admin (worker authentication — set a shared secret in .env)
     admin_token: str = "change-me-in-production"
 
+    # Firecrawl self-hosted endpoint (empty or disabled = Reddit-only feed)
+    firecrawl_base_url: str = "http://localhost:3002"
+    firecrawl_enabled: bool = True
+
 
 settings = Settings()

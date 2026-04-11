@@ -6,6 +6,7 @@ import ItemDetail from "./pages/ItemDetail";
 import Timeline from "./pages/Timeline";
 import LineageGraph from "./pages/LineageGraph";
 import SearchResults from "./pages/SearchResults";
+import Feed from "./pages/Feed";
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="/item/:id" element={<ItemDetail />} />
         <Route path="/timeline" element={<Timeline />} />
         <Route path="/graph" element={<LineageGraph />} />
+        <Route path="/feed" element={<Feed />} />
         <Route path="/search" element={<SearchResults />} />
       </Route>
     </Routes>

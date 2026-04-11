@@ -7,7 +7,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import admin, categories, comments, items, lineage, search, stats
+from app.routers import (
+    admin,
+    categories,
+    comments,
+    feed,
+    items,
+    lineage,
+    search,
+    stats,
+)
 from app.tasks import shutdown_scheduler, start_scheduler
 
 logging.basicConfig(
@@ -54,6 +63,7 @@ app.include_router(comments.router, prefix=settings.api_prefix)
 app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(stats.router, prefix=settings.api_prefix)
 app.include_router(lineage.router, prefix=settings.api_prefix)
+app.include_router(feed.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
 
 

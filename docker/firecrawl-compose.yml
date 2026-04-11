@@ -1,0 +1,82 @@
+name: firecrawl
+
+# Firecrawl self-host for VFX SOTA Monitor Feed
+# 이 compose는 메인 프로젝트와 독립적으로 실행됩니다.
+# 실행:
+#   docker compose -f docker/firecrawl-compose.yml up -d
+# 중지:
+#   docker compose -f docker/firecrawl-compose.yml down
+#
+# 설치 후 API: http://localhost:3002
+# Docs: https://github.com/mendableai/firecrawl/blob/main/SELF_HOST.md
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: firecrawl-redis
+    restart: unless-stopped
+    command: redis-server --bind 0.0.0.0 --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - firecrawl-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  playwright-service:
+    image: trieve/puppeteer-service-ts:latest
+    container_name: firecrawl-playwright
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - PROXY_SERVER=
+      - BLOCK_MEDIA=true
+    ports:
+      - "3100:3000"
+
+  api:
+    image: trieve/firecrawl:latest
+    container_name: firecrawl-api
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      playwright-service:
+        condition: service_started
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+      - USE_DB_AUTHENTICATION=false
+      - NUM_WORKERS_PER_QUEUE=2
+      - LOGGING_LEVEL=INFO
+      - FLY_PROCESS_GROUP=app
+      - BULL_AUTH_KEY=vfx-sota-local
+      - OPENAI_API_KEY=
+    ports:
+      - "3002:3002"
+    command: ["node", "dist/src/index.js"]
+
+  worker:
+    image: trieve/firecrawl:latest
+    container_name: firecrawl-worker
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      playwright-service:
+        condition: service_started
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+      - USE_DB_AUTHENTICATION=false
+      - FLY_PROCESS_GROUP=worker
+      - BULL_AUTH_KEY=vfx-sota-local
+    command: ["node", "dist/src/services/queue-worker.js"]
+
+volumes:
+  firecrawl-redis-data:

@@ -43,3 +43,22 @@ export type DashboardSummary = {
   categories_with_updates: number;
   last_crawl: string | null;
 };
+
+export type FeedItem = {
+  id: number;
+  source: "firecrawl" | "reddit" | "x" | "hf_space" | "manual";
+  external_id: string;
+  url: string;
+  title: string;
+  excerpt: string | null;
+  content_md: string | null;
+  image_url: string | null;
+  author: string | null;
+  published_at: string | null;
+  discovered_at: string;
+  tags: string[];
+  feed_metadata: Record<string, unknown>;
+  is_saved: boolean;
+  saved_at: string | null;
+  promoted_item_id: number | null;
+};
