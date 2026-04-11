@@ -1,12 +1,10 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles, TrendingUp, AlertCircle, Clock } from "lucide-react";
 import { fetchCategories } from "../api/categories";
 import { fetchSummary } from "../api/stats";
-import { fetchItems, type ItemFilters } from "../api/items";
-import CategoryGrid from "../components/CategoryGrid";
+import { fetchItems } from "../api/items";
+import CategorySection from "../components/CategorySection";
 import ItemCard from "../components/ItemCard";
-import FilterPanel from "../components/FilterPanel";
 
 function StatCard({
   icon: Icon,
@@ -35,8 +33,6 @@ function StatCard({
 }
 
 export default function Dashboard() {
-  const [filters, setFilters] = useState<ItemFilters>({ sort: "discovered" });
-
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
     queryFn: fetchCategories,
@@ -46,10 +42,15 @@ export default function Dashboard() {
     queryKey: ["items", { priority: "P0" }],
     queryFn: () => fetchItems({ priority: "P0", limit: 5 }),
   });
-  const { data: filteredItems = [] } = useQuery({
-    queryKey: ["items", "filtered", filters],
-    queryFn: () => fetchItems({ ...filters, limit: 12 }),
+
+  const sortedCategories = [...categories].sort((a, b) => {
+    if (a.item_count === 0 && b.item_count > 0) return 1;
+    if (a.item_count > 0 && b.item_count === 0) return -1;
+    return b.item_count - a.item_count;
   });
+
+  const activeCategories = sortedCategories.filter((c) => c.item_count > 0);
+  const emptyCategories = sortedCategories.filter((c) => c.item_count === 0);
 
   return (
     <div className="space-y-6">
@@ -102,35 +103,33 @@ export default function Dashboard() {
         </section>
       )}
 
-      <section>
-        <h2 className="text-sm font-semibold text-neutral-300 mb-3">카테고리 (10)</h2>
-        <CategoryGrid categories={categories} />
-      </section>
+      {activeCategories.length > 0 && (
+        <div className="space-y-4">
+          {activeCategories.map((cat) => (
+            <CategorySection key={cat.slug} category={cat} />
+          ))}
+        </div>
+      )}
 
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-neutral-300">최근 발견</h2>
-        </div>
-        <div className="mb-3">
-          <FilterPanel
-            filters={filters}
-            onChange={setFilters}
-            showCategory
-            categories={categories.map((c) => ({ slug: c.slug, name_ko: c.name_ko }))}
-          />
-        </div>
-        {filteredItems.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-neutral-800 p-8 text-center text-sm text-neutral-500">
-            조건에 맞는 아이템이 없습니다
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filteredItems.map((item) => (
-              <ItemCard key={item.id} item={item} />
+      {emptyCategories.length > 0 && (
+        <section>
+          <h2 className="text-xs font-semibold text-neutral-500 uppercase mb-2">
+            대기 중 ({emptyCategories.length})
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {emptyCategories.map((cat) => (
+              <a
+                key={cat.slug}
+                href={`/category/${cat.slug}`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-1.5 text-xs text-neutral-400 hover:border-neutral-700"
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.name_ko}</span>
+              </a>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {categories.length === 0 && (
         <div className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/50 p-12 text-center">
