@@ -2,22 +2,33 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ExternalLink, Star } from "lucide-react";
 import { fetchItem } from "../api/items";
+import { fetchItemLineage } from "../api/lineage";
 import SourceBadge from "../components/SourceBadge";
 import PriorityBadge from "../components/PriorityBadge";
+import LineageFlow from "../components/LineageFlow";
 
 export default function ItemDetail() {
   const { id } = useParams<{ id: string }>();
+  const itemId = id ? Number(id) : undefined;
+
   const { data: item } = useQuery({
     queryKey: ["item", id],
-    queryFn: () => fetchItem(Number(id)),
-    enabled: !!id,
+    queryFn: () => fetchItem(itemId!),
+    enabled: !!itemId,
+  });
+
+  const { data: lineage } = useQuery({
+    queryKey: ["lineage", "item", id],
+    queryFn: () => fetchItemLineage(itemId!, 2),
+    enabled: !!itemId,
   });
 
   if (!item) return <div className="text-neutral-500">Loading...</div>;
   const score = item.llm_score || item.keyword_score;
+  const hasLineage = lineage && lineage.nodes.length > 1;
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-5xl space-y-6">
       <Link
         to="/"
         className="inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-100"
@@ -93,9 +104,16 @@ export default function ItemDetail() {
         </div>
       )}
 
-      {/* Phase 2: 댓글 영역 예정 */}
+      {hasLineage && (
+        <section>
+          <h2 className="text-sm font-semibold text-neutral-300 mb-3">기술 계보 (주변)</h2>
+          <LineageFlow graph={lineage} height={500} />
+        </section>
+      )}
+
+      {/* Phase 6: 댓글 영역 예정 */}
       <div className="rounded-xl border border-dashed border-neutral-800 p-6 text-center">
-        <p className="text-sm text-neutral-500">💬 댓글 기능 (Phase 2 예정)</p>
+        <p className="text-sm text-neutral-500">💬 댓글 기능 (Phase 6 예정)</p>
       </div>
     </div>
   );
