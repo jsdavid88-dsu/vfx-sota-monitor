@@ -23,27 +23,29 @@ def _get_client() -> Github:
 
 
 def _build_query(keywords: list[str], topics: list[str], days_back: int) -> str:
-    """Build a GitHub search query from category keywords/topics."""
-    # Quote multi-word keywords
+    """Build a GitHub search query from category keywords/topics.
+
+    Keywords and topics are combined with OR (not AND) so a repo matching
+    either set will be found. GitHub repos often lack topic tags.
+    """
     kw_parts = []
-    for kw in keywords[:5]:  # Cap to avoid query length limit
+    for kw in keywords[:5]:
         if " " in kw:
             kw_parts.append(f'"{kw}"')
         else:
             kw_parts.append(kw)
 
-    topic_parts = [f"topic:{t}" for t in topics[:3]]
+    # topic: qualifier combined with OR breaks GitHub search — use keywords only
+    # Topics from categories are often also in repo names/descriptions anyway
+    for t in topics[:3]:
+        kw_parts.append(t.replace("-", " "))
 
     since_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).date().isoformat()
 
-    parts: list[str] = []
-    if kw_parts:
-        parts.append("(" + " OR ".join(kw_parts) + ")")
-    if topic_parts:
-        parts.append("(" + " OR ".join(topic_parts) + ")")
-    parts.append(f"pushed:>={since_date}")
+    query = " OR ".join(kw_parts) if kw_parts else ""
+    query += f" pushed:>={since_date} stars:>=5"
 
-    return " ".join(parts)
+    return query.strip()
 
 
 def fetch_github(
@@ -68,7 +70,7 @@ def fetch_github(
     items: list[FetchedItem] = []
     try:
         g = _get_client()
-        results = g.search_repositories(query=query, sort="updated", order="desc")
+        results = g.search_repositories(query=query, sort="stars", order="desc")
 
         for i, repo in enumerate(results):
             if i >= max_results:

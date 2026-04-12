@@ -1,4 +1,4 @@
-"""Feed crawler — runs Firecrawl + Reddit feed sources and persists feed_items.
+"""Feed crawler — runs Crawl4AI + Reddit feed sources and persists feed_items.
 
 Scheduled via APScheduler. Can also be triggered manually via admin API.
 """
@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import SessionLocal
 from app.models import CrawlRun, FeedItem
 from app.sources.feed_reddit import fetch_reddit_feed
-from app.sources.firecrawl_src import fetch_firecrawl_feed
+from app.sources.crawl4ai_src import fetch_crawl4ai_feed
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +76,10 @@ async def crawl_feed_source(source: str) -> dict:
 
         try:
             items: list[dict] = []
-            if source == "firecrawl":
+            if source == "crawl4ai":
                 queries = cfg.get("firecrawl_queries") or []
                 items = await loop.run_in_executor(
-                    None, lambda: fetch_firecrawl_feed(queries)
+                    None, lambda: fetch_crawl4ai_feed(queries)
                 )
             elif source == "reddit":
                 rcfg = cfg.get("reddit") or {}
@@ -115,6 +115,6 @@ async def crawl_feed_source(source: str) -> dict:
 async def crawl_feed_all() -> list[dict]:
     """Run all feed sources sequentially."""
     results = []
-    for src in ["firecrawl", "reddit"]:
+    for src in ["crawl4ai", "reddit"]:
         results.append(await crawl_feed_source(src))
     return results

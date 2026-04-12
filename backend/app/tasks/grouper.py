@@ -1,9 +1,10 @@
 """Item grouper — unifies same research across arxiv/github/huggingface sources.
 
 Strategy:
-1. Fingerprint-based: normalize title/name to first N meaningful words
-2. Cross-reference: if arxiv item has code_links pointing to github/hf item
-   that exists, link them to same group
+1. Extract project name from each item (arxiv title acronym, github/hf repo name)
+2. Normalize to a short key and group items sharing the same key
+3. Cross-reference: arxiv code_links → github/hf external_id matching
+4. Title-to-repo fuzzy match: arxiv title contains repo name (case-insensitive)
 
 Runs after each crawl.
 """
@@ -22,32 +23,76 @@ from app.models import Item, ItemGroup
 
 logger = logging.getLogger(__name__)
 
-STOP_WORDS = {
-    "a", "an", "the", "for", "of", "and", "or", "with", "via", "to", "in",
-    "on", "by", "from", "using", "through", "based", "towards", "learning",
-    "model", "models", "method", "methods", "approach", "framework",
-    "video", "image", "3d", "2d", "neural", "deep",
-}
+
+# ── Project name extraction (pure logic, no DB) ─────────────────
 
 
-# ── Fingerprinting (pure logic, no DB) ──────────────────────────
+def _extract_project_name(title: str) -> str | None:
+    """Extract project/model name from an arxiv-style title.
+
+    Patterns:
+      "VOID: Physics-aware Video Object Removal" → "void"
+      "AA-Splat: Feed-forward Anti-aliased 3DGS" → "aa-splat"
+      "MatAnyone 2: Video Matting with Memory" → "matanyone"
+      "CoTracker3: Improved Dense Point Tracking" → "cotracker3"
+      "BiRefNet: ..." → "birefnet"
+    """
+    if not title:
+        return None
+
+    # Pattern 1: "ProjectName: subtitle" or "ProjectName — subtitle"
+    m = re.match(r'^([A-Z][A-Za-z0-9_\-]+(?:\s*\d+)?)\s*[:—–\-]\s', title)
+    if m:
+        return re.sub(r'[\s_\-]+', '', m.group(1)).lower()
+
+    # Pattern 2: first word is an acronym (all caps, 2+ chars)
+    first = title.split()[0] if title.split() else ""
+    if len(first) >= 2 and first.replace('-', '').replace('_', '').isalpha() and first.isupper():
+        return first.lower().replace('-', '').replace('_', '')
+
+    return None
+
+
+def _normalize_repo_name(external_id: str) -> str:
+    """Normalize a github/hf external_id to a comparable key.
+
+    "netflix/void-model" → "void"
+    "wu1g119/BiRefNet_HR-matting" → "birefnet"
+    "SoraExplora/clip" → "clip"
+    """
+    repo = (external_id or "").split("/")[-1].lower()
+    # Strip common suffixes
+    for suffix in ["-model", "_model", "-base", "-large", "-small",
+                   "_hr-matting", "-hr-matting", "-matting",
+                   "-portrait-tensorrt", "-tensorrt",
+                   "-vit-large-patch14", "-vit-base-patch16",
+                   "-polarquant-q5", "-gguf", "-fp16", "-int8"]:
+        if repo.endswith(suffix):
+            repo = repo[: -len(suffix)]
+    # Normalize separators
+    repo = re.sub(r'[\s_\-]+', '', repo)
+    return repo
 
 
 def compute_fingerprint(item: Item) -> str:
-    """Reduce a title/name to a canonical fingerprint string."""
-    raw = ""
+    """Compute a grouping key for an item."""
     if item.source == "arxiv":
-        raw = item.title or ""
-    elif item.source in ("github", "huggingface"):
-        name = (item.external_id or "").split("/")[-1]
-        raw = name or item.title or ""
-    else:
-        raw = item.title or ""
+        name = _extract_project_name(item.title or "")
+        if name:
+            return name
+        # Fallback: first 3 meaningful words
+        words = re.findall(r"[a-z0-9]+", (item.title or "").lower())
+        stop = {"a", "an", "the", "for", "of", "and", "or", "with", "via",
+                "to", "in", "on", "by", "from", "using", "based"}
+        keep = [w for w in words if w not in stop and len(w) >= 2]
+        return " ".join(keep[:3])
 
-    words = re.findall(r"[a-z0-9]+", raw.lower())
-    keep = [w for w in words if w not in STOP_WORDS and len(w) >= 2]
-    fingerprint = " ".join(keep[:3])
-    return fingerprint or raw[:50].lower()
+    elif item.source in ("github", "huggingface"):
+        return _normalize_repo_name(item.external_id or "")
+
+    # reddit/x: use title-based fallback
+    words = re.findall(r"[a-z0-9]+", (item.title or "").lower())
+    return " ".join(words[:3])
 
 
 def pick_primary(items: list[Item]) -> Item:
@@ -83,7 +128,6 @@ async def _assign_groups(db: AsyncSession, items: list[Item]) -> tuple[int, int]
         if fp in fp_to_group:
             group_id = fp_to_group[fp]
         else:
-            # Upsert to handle concurrent grouper runs safely
             stmt = (
                 sqlite_insert(ItemGroup)
                 .values(
@@ -94,7 +138,6 @@ async def _assign_groups(db: AsyncSession, items: list[Item]) -> tuple[int, int]
             )
             await db.execute(stmt)
             await db.flush()
-            # Fetch the (possibly pre-existing) group id
             row = (
                 await db.execute(
                     select(ItemGroup.id).where(ItemGroup.fingerprint == fp)
@@ -111,8 +154,48 @@ async def _assign_groups(db: AsyncSession, items: list[Item]) -> tuple[int, int]
     return created, linked
 
 
+async def _merge_by_title_match(db: AsyncSession, items: list[Item]) -> int:
+    """Match arxiv items to github/hf items when the repo name appears in the title."""
+    linked = 0
+    arxiv_items = [i for i in items if i.source == "arxiv"]
+    repo_items = [i for i in items if i.source in ("github", "huggingface")]
+
+    for ax in arxiv_items:
+        ax_title_lower = (ax.title or "").lower()
+        project = _extract_project_name(ax.title or "")
+        if not project:
+            continue
+
+        for repo in repo_items:
+            repo_key = _normalize_repo_name(repo.external_id or "")
+            if not repo_key or len(repo_key) < 3:
+                continue
+
+            # Match if arxiv project name matches repo key
+            if project != repo_key:
+                continue
+
+            # Merge into same group
+            if ax.group_id and repo.group_id and ax.group_id != repo.group_id:
+                old_gid = repo.group_id
+                await db.execute(
+                    sql_update(Item)
+                    .where(Item.group_id == old_gid)
+                    .values(group_id=ax.group_id)
+                )
+                linked += 1
+            elif ax.group_id and not repo.group_id:
+                repo.group_id = ax.group_id
+                linked += 1
+            elif repo.group_id and not ax.group_id:
+                ax.group_id = repo.group_id
+                linked += 1
+
+    return linked
+
+
 async def _merge_cross_references(db: AsyncSession, items: list[Item]) -> int:
-    """Second pass: merge groups when arxiv code_links match github/hf items."""
+    """Merge groups when arxiv code_links match github/hf items by external_id."""
     linked = 0
     arxiv_items = [i for i in items if i.source == "arxiv"]
 
@@ -152,7 +235,7 @@ async def _merge_cross_references(db: AsyncSession, items: list[Item]) -> int:
 
 
 async def _update_primaries(db: AsyncSession) -> None:
-    """Third pass: set primary_item_id per group."""
+    """Set primary_item_id per group."""
     groups = list((await db.execute(select(ItemGroup))).scalars().all())
 
     for g in groups:
@@ -167,7 +250,7 @@ async def _update_primaries(db: AsyncSession) -> None:
 
 
 async def group_items() -> dict:
-    """Assign group_id to all items lacking one.
+    """Assign group_id to all items, then merge cross-source matches.
 
     Returns stats dict with created/linked counts.
     """
@@ -175,7 +258,19 @@ async def group_items() -> dict:
         stmt = select(Item).order_by(Item.discovered_at.asc())
         items = list((await db.execute(stmt)).scalars().all())
 
+        # Reset all group_ids for a clean re-grouping
+        for item in items:
+            item.group_id = None
+        await db.flush()
+
+        # Clean out old groups
+        old_groups = (await db.execute(select(ItemGroup))).scalars().all()
+        for g in old_groups:
+            await db.delete(g)
+        await db.flush()
+
         created, linked = await _assign_groups(db, items)
+        linked += await _merge_by_title_match(db, items)
         linked += await _merge_cross_references(db, items)
         await _update_primaries(db)
 

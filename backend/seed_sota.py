@@ -23,15 +23,15 @@ KNOWN_SOTA = [
     ("video_matting", "2601.08568", "VideoMaMa: Generative Priors for Video Matting",
      "KAIST + Korea Univ + Adobe", 2026, "P1",
      "CVPR 2026. SVD+DINOv3 generative prior. MA-V 50K dataset"),
-    ("video_matting", "2601.01234", "MatAnyone 2: Video Matting with Memory Propagation",
+    ("video_matting", "2512.11782", "MatAnyone 2: Scaling Video Matting via a Learned Quality Evaluator",
      "NTU S-Lab", 2026, "P1",
      "CVPR 2026. Memory propagation + MQE quality evaluator"),
 
     # Video Removal
-    ("video_removal", "2604.01234", "VOID: Physics-aware Video Object Removal",
+    ("video_removal", "2604.02296", "VOID: Video Object and Interaction Deletion",
      "Netflix Research", 2026, "P0",
      "Apache 2.0. User study 64.8% vs Runway 18.4%. Physics-aware quadmask"),
-    ("video_removal", "2603.14567", "EffectErase: Diffusion-based Video Effect Removal",
+    ("video_removal", "2603.19224", "EffectErase: Joint Video Object Removal and Insertion for High-Quality Effect Erasing",
      "EffectErase Team", 2026, "P1",
      "VOR 60K pairs. 5 effect types"),
     ("video_removal", "2405.05519", "MiniMax-Remover: 6-Step Video Object Removal",
@@ -42,18 +42,18 @@ KNOWN_SOTA = [
      "ICCV 2023. Classical baseline"),
 
     # Face Parsing
-    ("face_parsing", "2603.27000", "SAM 3.1: Object Multiplex Segmentation",
-     "Meta AI", 2026, "P1",
-     "848M params. 128 object tracking 7x speedup"),
+    ("face_parsing", "2511.16719", "SAM 3: Segment Anything with Concepts",
+     "Meta AI", 2025, "P1",
+     "Concept prompts. 4M unique labels. 2x accuracy"),
     ("face_parsing", "2412.11100", "SegFace: Transformer Decoder for Face Parsing SOTA",
      "Kartik et al", 2024, "P1",
      "CelebAMask-HQ 88.96 F1. Long-tail class specialization"),
 
     # Point Tracking
-    ("point_tracking", "2509.15000", "Track-On2: Online Point Tracking with Memory",
+    ("point_tracking", "2509.19115", "Track-On2: Enhancing Online Point Tracking with Memory",
      "Track-On Team", 2025, "P1",
      "ICLR 25 + TPAMI 26 + CVPR 26. 8-tracker unified wrapper"),
-    ("point_tracking", "2410.01234", "CoTracker3: Improved Dense Point Tracking",
+    ("point_tracking", "2410.11831", "CoTracker3: Simpler and Better Point Tracking by Pseudo-Labelling Real Videos",
      "Meta AI", 2024, "P2",
      "scaled_online / scaled_offline checkpoints"),
     ("point_tracking", "2306.08637", "TAPIR: Tracking Any Point with Matching",
@@ -61,10 +61,10 @@ KNOWN_SOTA = [
      "TAP benchmark SOTA precursor"),
 
     # Head Swap
-    ("head_swap", "2509.15001", "Wan-Animate: Animation + Replacement Modes",
+    ("head_swap", "2509.14055", "Wan-Animate: Unified Character Animation and Replacement with Holistic Replication",
      "Alibaba Tongyi Lab", 2025, "P1",
      "720p 24fps. Wan 2.2 Animate 14B. ComfyUI ready"),
-    ("head_swap", "2512.10000", "DirectSwap: Mask-Free Video Head Swap",
+    ("head_swap", "2512.09417", "DirectSwap: Mask-Free Cross-Identity Training and Benchmarking for Expression-Consistent Video Head Swapping",
      "HeadSwapBench Team", 2025, "P2",
      "HeadSwapBench 8066 training + 500 eval. MEAR loss"),
 
@@ -72,7 +72,7 @@ KNOWN_SOTA = [
     ("3dgs", "2308.04079", "3D Gaussian Splatting for Real-Time Radiance Field Rendering",
      "Kerbl et al", 2023, "P1",
      "SIGGRAPH 2023. Foundation paper"),
-    ("3dgs", "2603.31000", "AA-Splat: Feed-forward Anti-aliased 3DGS",
+    ("3dgs", "2603.29394", "AA-Splat: Anti-Aliased Feed-forward Gaussian Splatting",
      "AA-Splat Team", 2026, "P2",
      "First feed-forward anti-aliased 3DGS. +5.4~7.5dB PSNR"),
     ("3dgs", "2311.16493", "Mip-Splatting: Alias-free 3D Gaussian Splatting",
@@ -80,15 +80,15 @@ KNOWN_SOTA = [
      "CVPR 2024. 3D+2D scale-aware filtering"),
 
     # Beauty
-    ("beauty", "2410.09000", "AuthFace: Asian-specific Face Retouching",
+    ("beauty", "2410.09864", "AuthFace: Towards Authentic Blind Face Restoration with Face-oriented Generative Diffusion Prior",
      "ZhenzhiWang", 2024, "P1",
      "1.5K studio pairs. Photography-guided annotation"),
-    ("beauty", "2507.18000", "MoFRR: Mixture of Experts for Face Retouching Restoration",
+    ("beauty", "2507.19770", "MoFRR: Mixture of Diffusion Models for Face Retouching Restoration",
      "MoFRR Team", 2025, "P1",
      "RetouchingFFHQ++ 1M pairs. Type-specific router"),
 
     # Korean text editing
-    ("korean_text_edit", "2511.08000", "STELLAR: Scene Text Editor for Low-resource Languages",
+    ("korean_text_edit", "2511.09977", "STELLAR: Scene Text Editor for Low-Resource Languages and Real-World Data",
      "STELLAR Team", 2025, "P1",
      "Korean included. Language-adaptive glyph encoder"),
     ("korean_text_edit", "2603.24571", "TextFlow: Training-free Scene Text Editing",
@@ -96,7 +96,7 @@ KNOWN_SOTA = [
      "FMS + AttnBoost. Training-free. FlowEdit SSIM +1.44"),
 
     # Ref search
-    ("ref_search", "2601.08080", "Qwen3-VL-Embedding-8B: MMEB-V2 SOTA",
+    ("ref_search", "2601.04720", "Qwen3-VL-Embedding and Qwen3-VL-Reranker: A Unified Framework for State-of-the-Art Multimodal Retrieval and Ranking",
      "Qwen Team Alibaba", 2026, "P1",
      "MMEB-V2 77.8. Image/Video/Document unified"),
 
