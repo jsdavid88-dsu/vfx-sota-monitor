@@ -247,6 +247,99 @@ Docker 걷어내기 + SQLite 전환 + 네이티브 실행 가이드
 - 백업 스크립트 (SQLite 일일 백업)
 - 모니터링 (간단한 헬스체크)
 
+### Phase B ✅ 완료
+실전 피드 탭 (Firecrawl + Reddit) → Crawl4AI로 교체 완료
+
+### Phase C — Item Groups + 모듈화 ✅ 완료
+- 교차 소스 그룹핑 (arxiv↔github↔hf fingerprint 매칭)
+- 대시보드 중복 제거, 상세 siblings 패널
+- constants.py/serializers.py 중앙화, grouper 분리
+
+### Phase D — 아르카 에이전트 + Crawl4AI ✅ 완료
+- Firecrawl(Docker) → Crawl4AI(pip) 교체
+- 아르카 풀 에이전트: Gemma4 tool calling (web_search/crawl_page/finish)
+- GitHub 크롤러 검색 쿼리 수정 (괄호 버그, topic qualifier)
+- seed_sota.py 가짜 arxiv ID 13개 → 실제 ID 교체
+
+### Phase E — 제보 시스템 + 카테고리 진화 (다음)
+
+#### E-1: 제보 탭 ("이거 봐봐")
+팀원 누구나 URL/키워드를 던지면 큐에 쌓이고, 야간 배치로 아르카가 조사.
+
+**백엔드:**
+- `submissions` 테이블: id, submitted_by, input_type(url/keyword), input_value, status(pending/processing/done/rejected), created_at, processed_at, result_item_id
+- `POST /api/submit` — URL 또는 키워드 제출 (인증 불필요, rate limit만)
+- `GET /api/submissions` — 제보 목록 + 처리 상태
+- `POST /api/admin/process-submissions` — 야간 배치 트리거
+
+**프론트:**
+- Submit 탭 (사이드바) — URL 입력 / 키워드 입력 / 제출 히스토리
+- 처리 상태 표시: 대기 → 조사중 → 완료(아이템 링크) / 거절(사유)
+
+**야간 배치 흐름:**
+```
+pending submissions
+  → URL이면: Crawl4AI로 크롤 → 아르카가 분석 → items에 삽입 + 스코어링
+  → 키워드면: Crawl4AI로 Google 검색 → 상위 결과 크롤 → 아르카 판단 → 유의미한 것만 items에
+  → submission.status = done, result_item_id 연결
+```
+
+#### E-2: 미분류 태그 + 카테고리 승격
+
+**자동 태그:**
+- 아이템이 기존 10개 카테고리 어디에도 안 맞으면 → `uncategorized` 태그
+- 아르카가 자유 태그 부여 (예: "comfyui-workflow", "lora-training", "audio-driven")
+
+**승격 감지:**
+- `tag_counts` 집계 뷰: 미분류 태그별 아이템 수
+- 같은 태그가 N개(기본 5) 이상 쌓이면 → 승격 후보
+- `POST /api/admin/suggest-categories` → 아르카가 후보 태그 분석:
+  - 태그명 → 한/영 카테고리명 제안
+  - 키워드/토픽 자동 생성
+  - 기존 카테고리와 중복/포함 관계 판단
+
+**승격 워크플로:**
+```
+미분류 아이템 쌓임
+  → tag_counts에서 threshold 초과 감지
+  → 아르카가 카테고리 제안 JSON 생성
+  → 관리자 대시보드에 "새 카테고리 제안" 알림
+  → 승인 → categories 테이블에 추가 + 기존 아이템 재분류
+  → 거절 → 태그 유지, 다음 threshold까지 대기
+```
+
+**프론트:**
+- Admin 페이지에 "카테고리 제안" 섹션
+- 제안 카드: 태그명, 아이템 수, 아르카 추천 이유, 승인/거절 버튼
+
+#### E-3: 야간 배치 파이프라인
+
+**스케줄 (APScheduler):**
+```
+09:00 KST — 정규 크롤 (arxiv/github/hf/reddit) + 키워드 스코어링
+21:00 KST — 야간 배치:
+  1. 제보 처리 (submissions 큐)
+  2. 아르카 리서처 (미분석 아이템 deep 조사)
+  3. 그룹핑 갱신
+  4. 미분류 태그 집계 → 승격 후보 감지
+  5. (향후) TurboQuant + Gemma4 31B 전환
+```
+
+#### E-4: TurboQuant + Gemma4 31B (5090 도입 후)
+
+**목표:** 26B → 31B 업그레이드, KV 캐시 3비트 압축으로 VRAM 절감
+
+**준비 사항:**
+- llama.cpp TurboQuant 포크 빌드 또는 Ollama 공식 지원 대기
+- `--cache-type-k turbo3 --cache-type-v turbo3` 플래그
+- config.yaml에 `OLLAMA_MODEL: gemma4:31b` 변경만으로 전환
+- 벤치마크: 26B vs 31B tool calling 정확도/속도 비교
+
+**예상 VRAM (RTX 5090 32GB):**
+- 모델 Q4: ~18GB
+- KV 캐시 (TurboQuant 3bit, 128K): ~5GB
+- 여유: ~9GB
+
 ## 검증 방법
 
 ### 메인 PC 로컬 테스트
