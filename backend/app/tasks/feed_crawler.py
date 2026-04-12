@@ -1,4 +1,12 @@
-"""Feed crawler — runs Crawl4AI + Reddit feed sources and persists feed_items.
+"""Feed crawler — orchestrates all feed sources and persists feed_items.
+
+Sources (in order):
+  1. YouTube RSS (channel feeds, no API key)
+  2. X/Twitter (nitter RSS → Crawl4AI fallback)
+  3. HuggingFace trending (daily papers + spaces API)
+  4. PapersWithCode (public API)
+  5. Crawl4AI web search (Google, supplementary)
+  6. Reddit (PRAW)
 
 Scheduled via APScheduler. Can also be triggered manually via admin API.
 """
@@ -10,14 +18,11 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
-from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
 from app.models import CrawlRun, FeedItem
-from app.sources.feed_reddit import fetch_reddit_feed
-from app.sources.crawl4ai_src import fetch_crawl4ai_feed
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +65,85 @@ async def _persist(db: AsyncSession, items: list[dict]) -> int:
     return new_count
 
 
-async def crawl_feed_source(source: str) -> dict:
-    """Run a single feed source.
+# ── Source runners ───────────────────────────────────────────
 
-    source: 'firecrawl' | 'reddit'
-    """
+def _run_youtube(cfg: dict) -> list[dict]:
+    channels = cfg.get("youtube_channels", [])
+    if not channels or not isinstance(channels, list):
+        return []
+    from app.sources.feed_youtube import fetch_youtube_feed
+    return fetch_youtube_feed(channels, max_per_channel=cfg.get("max_per_channel", 5))
+
+
+def _run_x(cfg: dict) -> list[dict]:
+    accounts = cfg.get("x_accounts", [])
+    if not accounts or not isinstance(accounts, list):
+        return []
+    from app.sources.feed_x import fetch_x_feed
+    return fetch_x_feed(accounts, max_per_account=cfg.get("max_per_account", 10))
+
+
+def _run_hf_trending(cfg: dict) -> list[dict]:
+    hf_cfg = cfg.get("huggingface_trending", {})
+    if not hf_cfg:
+        return []
+    from app.sources.feed_hf_trending import fetch_hf_trending
+    return fetch_hf_trending(hf_cfg)
+
+
+def _run_paperswithcode(cfg: dict) -> list[dict]:
+    pwc_cfg = cfg.get("paperswithcode", {})
+    if not pwc_cfg:
+        return []
+    from app.sources.feed_paperswithcode import fetch_paperswithcode_feed
+    return fetch_paperswithcode_feed(pwc_cfg)
+
+
+def _run_crawl4ai(cfg: dict) -> list[dict]:
+    queries = cfg.get("crawl4ai_queries") or cfg.get("firecrawl_queries") or []
+    if not queries:
+        return []
+    from app.sources.crawl4ai_src import fetch_crawl4ai_feed
+    return fetch_crawl4ai_feed(queries)
+
+
+def _run_reddit(cfg: dict) -> list[dict]:
+    rcfg = cfg.get("reddit", {})
+    if not rcfg:
+        return []
+    from app.sources.feed_reddit import fetch_reddit_feed
+    return fetch_reddit_feed(
+        rcfg.get("subreddits", []),
+        rcfg.get("keywords", []),
+        rcfg.get("days_back", 3),
+        rcfg.get("max_per_sub", 15),
+    )
+
+
+# Source registry: (name, runner, needs_async)
+FEED_SOURCES = [
+    ("youtube", _run_youtube, False),
+    ("x", _run_x, False),
+    ("hf_trending", _run_hf_trending, False),
+    ("paperswithcode", _run_paperswithcode, False),
+    ("crawl4ai", _run_crawl4ai, False),
+    ("reddit", _run_reddit, False),
+]
+
+
+async def crawl_feed_source(source: str) -> dict:
+    """Run a single feed source."""
     cfg = _load_config()
     loop = asyncio.get_running_loop()
+
+    runner = None
+    for name, fn, _ in FEED_SOURCES:
+        if name == source:
+            runner = fn
+            break
+
+    if not runner:
+        return {"source": source, "error": f"Unknown feed source: {source}"}
 
     async with SessionLocal() as db:
         run = CrawlRun(source=f"feed_{source}", started_at=datetime.utcnow())
@@ -75,26 +152,7 @@ async def crawl_feed_source(source: str) -> dict:
         await db.refresh(run)
 
         try:
-            items: list[dict] = []
-            if source == "crawl4ai":
-                queries = cfg.get("firecrawl_queries") or []
-                items = await loop.run_in_executor(
-                    None, lambda: fetch_crawl4ai_feed(queries)
-                )
-            elif source == "reddit":
-                rcfg = cfg.get("reddit") or {}
-                items = await loop.run_in_executor(
-                    None,
-                    lambda: fetch_reddit_feed(
-                        rcfg.get("subreddits", []),
-                        rcfg.get("keywords", []),
-                        rcfg.get("days_back", 3),
-                        rcfg.get("max_per_sub", 15),
-                    ),
-                )
-            else:
-                raise ValueError(f"Unknown feed source: {source}")
-
+            items = await loop.run_in_executor(None, lambda: runner(cfg))
             new_count = await _persist(db, items)
 
             run.finished_at = datetime.utcnow()
@@ -104,6 +162,7 @@ async def crawl_feed_source(source: str) -> dict:
 
             logger.info(f"[feed:{source}] fetched={len(items)} new={new_count}")
             return {"source": source, "fetched": len(items), "new": new_count}
+
         except Exception as e:
             logger.exception(f"feed crawl_source({source}) failed")
             run.finished_at = datetime.utcnow()
@@ -115,6 +174,6 @@ async def crawl_feed_source(source: str) -> dict:
 async def crawl_feed_all() -> list[dict]:
     """Run all feed sources sequentially."""
     results = []
-    for src in ["crawl4ai", "reddit"]:
-        results.append(await crawl_feed_source(src))
+    for name, _, _ in FEED_SOURCES:
+        results.append(await crawl_feed_source(name))
     return results

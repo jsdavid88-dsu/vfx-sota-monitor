@@ -47,7 +47,7 @@ export type DashboardSummary = {
 
 export type FeedItem = {
   id: number;
-  source: "crawl4ai" | "firecrawl" | "reddit" | "x" | "hf_space" | "manual";
+  source: "youtube" | "x" | "hf_paper" | "hf_space" | "paperswithcode" | "crawl4ai" | "reddit" | "firecrawl" | "manual";
   external_id: string;
   url: string;
   title: string;

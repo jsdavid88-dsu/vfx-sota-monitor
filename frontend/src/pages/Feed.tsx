@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Flame, RefreshCw, Bookmark, Globe } from "lucide-react";
+import { Flame, RefreshCw, Bookmark, Globe, Youtube, Twitter, Sparkles, FileText } from "lucide-react";
 import { fetchFeed, triggerFeedCrawl } from "../api/feed";
 import FeedCard from "../components/FeedCard";
 
-type Tab = "all" | "crawl4ai" | "reddit" | "saved";
+type Tab = "all" | "youtube" | "x" | "hf_paper" | "hf_space" | "paperswithcode" | "crawl4ai" | "reddit" | "saved";
 
 export default function Feed() {
   const [tab, setTab] = useState<Tab>("all");
@@ -39,7 +39,12 @@ export default function Feed() {
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: "all", label: "전체", icon: Flame },
-    { id: "crawl4ai", label: "웹/뉴스", icon: Globe },
+    { id: "youtube", label: "YouTube", icon: Youtube },
+    { id: "x", label: "X", icon: Twitter },
+    { id: "hf_paper", label: "HF 논문", icon: Sparkles },
+    { id: "hf_space", label: "HF 스페이스", icon: Sparkles },
+    { id: "paperswithcode", label: "PwC", icon: FileText },
+    { id: "crawl4ai", label: "웹", icon: Globe },
     { id: "reddit", label: "Reddit", icon: Flame },
     { id: "saved", label: "북마크", icon: Bookmark },
   ];

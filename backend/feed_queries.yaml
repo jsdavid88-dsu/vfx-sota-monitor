@@ -1,41 +1,64 @@
-# VFX SOTA Monitor 피드 쿼리 설정
-# 이 파일을 수정하면 다음 feed_crawler 실행부터 반영됩니다.
+# VFX SOTA Monitor — 피드 소스 설정
+# 수정하면 다음 feed_crawler 실행부터 반영.
 
-# Firecrawl /search로 보낼 쿼리 목록
-firecrawl_queries:
+# ─── YouTube 채널 RSS (API 키 불필요) ───────────────────────
+youtube_channels:
+  - channel_id: "UCbfYPyITQ-7l4upoX8nvctg"   # Two Minute Papers
+    name: "Two Minute Papers"
+    tags: [ai, research, paper-review]
+  - channel_id: "UCZXFjRct1LjJTtEcrm0ESdw"   # Corridor Crew (VFX)
+    name: "Corridor Crew"
+    tags: [vfx, production, tutorial]
+  - channel_id: "UC-8TUQE_mZbKMLkNqOvRdSQ"   # Olivio Sarikas (AI art)
+    name: "Olivio Sarikas"
+    tags: [comfyui, ai-art, workflow]
+  - channel_id: "UCaIh0gjaRCiJ_PsmEMxqung"   # Matt Wolfe (AI news)
+    name: "Matt Wolfe"
+    tags: [ai-news, tools]
+  - channel_id: "UCWN3xxRkmTPphLLdxLO1Kbg"   # Latent Space (AI podcast)
+    name: "Latent Space"
+    tags: [ai, deep-dive, research]
+max_per_channel: 5
+
+# ─── X/Twitter 계정 (nitter RSS → Crawl4AI fallback) ───────
+x_accounts:
+  - handle: "_akhaliq"
+    tags: [ai, paper, daily]
+  - handle: "multimodalart"
+    tags: [huggingface, demo, model]
+  - handle: "aaborochin"
+    tags: [comfyui, workflow]
+  - handle: "jonstephens85"
+    tags: [3dgs, gaussian-splatting]
+max_per_account: 10
+
+# ─── HuggingFace 트렌딩 (공식 API) ─────────────────────────
+huggingface_trending:
+  papers: true         # /api/daily_papers
+  spaces: true         # /api/spaces?sort=trending
+  max_papers: 10
+  max_spaces: 10
+  tags: [ai, model, demo]
+
+# ─── PapersWithCode (RSS) ──────────────────────────────────
+paperswithcode:
+  rss_url: "https://paperswithcode.com/latest"
+  max_items: 15
+  tags: [paper, code, benchmark]
+
+# ─── Crawl4AI 웹 검색 (기존 유지, 보조용) ──────────────────
+crawl4ai_queries:
   - query: "comfyui workflow tutorial 2026"
     tags: [comfyui, workflow, tutorial]
-    limit: 5
-
+    limit: 3
   - query: "gaussian splatting unreal engine production"
-    tags: [3dgs, production, tutorial]
-    limit: 5
-
-  - query: "animatediff lora tutorial"
-    tags: [ai-video, animatediff, lora]
-    limit: 5
-
-  - query: "wan animate face swap comfyui"
-    tags: [head-swap, comfyui, wan]
-    limit: 5
-
-  - query: "nuke python tutorial vfx"
+    tags: [3dgs, production]
+    limit: 3
+  - query: "nuke python vfx pipeline"
     tags: [nuke, vfx, pipeline]
-    limit: 5
+    limit: 3
 
-  - query: "stable video diffusion workflow"
-    tags: [ai-video, svd, workflow]
-    limit: 5
-
-  - query: "ai rotoscoping comfyui"
-    tags: [matting, rotoscoping, comfyui]
-    limit: 5
-
-  - query: "flux lora training vfx"
-    tags: [flux, lora, training]
-    limit: 5
-
-# Reddit 서브레딧과 키워드
+# ─── Reddit (기존 유지) ────────────────────────────────────
 reddit:
   subreddits:
     - comfyui
@@ -46,7 +69,6 @@ reddit:
     - animation
     - computervision
     - editors
-  # 각 서브레딧에서 이 키워드를 포함하는 글만
   keywords:
     - comfyui
     - workflow
