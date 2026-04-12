@@ -1,125 +1,40 @@
 """Night batch pipeline — runs at 21:00 KST daily.
 
-1. Process pending submissions (URL → crawl, keyword → search+crawl)
-2. Run grouper to unify cross-source items
-3. Aggregate free_tags → detect category promotion candidates
-4. (Future) Arca researcher for deep investigation of new items
+Gemma4 (Arca) is the brain for every AI-powered step:
 
-All steps are sequential and fault-tolerant — one step failing
-doesn't block the rest.
+1. Process pending submissions (Crawl4AI + Gemma4 analysis)
+2. Filter today's feed items (Gemma4: "VFX 관련?")
+3. Score unscored items (Gemma4: relevancy + priority + verdict)
+4. Tag assignment (Gemma4: free_tags for uncategorized items)
+5. Grouper (cross-source matching)
+6. Category promotion detection (Gemma4: tag analysis → suggestion)
+
+All steps are sequential and fault-tolerant.
 """
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text, update as sql_update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
-from app.models import Item, ItemCategory, Submission, CategorySuggestion
+from app.models import Item, ItemCategory, FeedItem, Submission, CategorySuggestion
 
 logger = logging.getLogger(__name__)
 
-PROMOTION_THRESHOLD = 5  # items with same tag before suggesting category
+PROMOTION_THRESHOLD = 5
+SCORE_BATCH_SIZE = 5
 
 
-async def _process_url_submission(db: AsyncSession, sub: Submission) -> int | None:
-    """Crawl a submitted URL, create an item if relevant. Returns item_id or None."""
-    try:
-        from app.sources.crawl4ai_src import _crawl_url
-        page = await _crawl_url(sub.input_value)
-        if not page:
-            return None
-
-        title = page.get("title") or sub.input_value[:200]
-        markdown = page.get("markdown") or ""
-        description = page.get("description") or markdown[:500]
-
-        external_id = hashlib.sha1(sub.input_value.encode("utf-8")).hexdigest()[:24]
-
-        stmt = (
-            sqlite_insert(Item)
-            .values(
-                source="submission",
-                external_id=external_id,
-                url=sub.input_value,
-                title=title[:2000],
-                abstract=description[:5000] or None,
-                item_metadata={"submitted_by": sub.submitted_by, "submission_id": sub.id},
-                keyword_score=0,
-                llm_score=0,
-                priority="WATCH",
-                status="submitted",
-                free_tags=["제보"],
-            )
-            .on_conflict_do_nothing(index_elements=["source", "external_id"])
-        )
-        await db.execute(stmt)
-        await db.flush()
-
-        row = (
-            await db.execute(
-                select(Item.id).where(Item.source == "submission", Item.external_id == external_id)
-            )
-        ).scalar_one_or_none()
-        return row
-    except Exception as e:
-        logger.warning(f"Failed to process URL submission {sub.id}: {e}")
-        return None
-
-
-async def _process_keyword_submission(db: AsyncSession, sub: Submission) -> int | None:
-    """Search for a keyword, crawl top result, create item if relevant."""
-    try:
-        from app.sources.crawl4ai_src import search_crawl4ai
-        results = await search_crawl4ai(sub.input_value, limit=1, tags=["제보"])
-        if not results:
-            return None
-
-        best = results[0]
-        external_id = hashlib.sha1(best["url"].encode("utf-8")).hexdigest()[:24]
-
-        stmt = (
-            sqlite_insert(Item)
-            .values(
-                source="submission",
-                external_id=external_id,
-                url=best["url"],
-                title=(best.get("title") or sub.input_value)[:2000],
-                abstract=(best.get("excerpt") or "")[:5000] or None,
-                item_metadata={
-                    "submitted_by": sub.submitted_by,
-                    "submission_id": sub.id,
-                    "search_query": sub.input_value,
-                },
-                keyword_score=0,
-                llm_score=0,
-                priority="WATCH",
-                status="submitted",
-                free_tags=["제보"],
-            )
-            .on_conflict_do_nothing(index_elements=["source", "external_id"])
-        )
-        await db.execute(stmt)
-        await db.flush()
-
-        row = (
-            await db.execute(
-                select(Item.id).where(Item.source == "submission", Item.external_id == external_id)
-            )
-        ).scalar_one_or_none()
-        return row
-    except Exception as e:
-        logger.warning(f"Failed to process keyword submission {sub.id}: {e}")
-        return None
-
+# ── Step 1: Submissions ─────────────────────────────────────
 
 async def step_process_submissions() -> dict:
-    """Step 1: Process all pending submissions."""
+    """Process pending submissions with Crawl4AI."""
     processed = 0
     failed = 0
 
@@ -132,10 +47,13 @@ async def step_process_submissions() -> dict:
             await db.flush()
 
             item_id = None
-            if sub.input_type == "url":
-                item_id = await _process_url_submission(db, sub)
-            elif sub.input_type == "keyword":
-                item_id = await _process_keyword_submission(db, sub)
+            try:
+                if sub.input_type == "url":
+                    item_id = await _process_url_submission(db, sub)
+                elif sub.input_type == "keyword":
+                    item_id = await _process_keyword_submission(db, sub)
+            except Exception as e:
+                logger.warning(f"Submission {sub.id} failed: {e}")
 
             if item_id:
                 sub.status = "done"
@@ -150,33 +68,215 @@ async def step_process_submissions() -> dict:
 
         await db.commit()
 
-    logger.info(f"[night] submissions: {processed} processed, {failed} failed")
-    return {"processed": processed, "failed": failed}
+    logger.info(f"[night] submissions: {processed} done, {failed} failed")
+    return {"step": "submissions", "processed": processed, "failed": failed}
 
+
+async def _process_url_submission(db: AsyncSession, sub: Submission) -> int | None:
+    from app.sources.crawl4ai_src import _crawl_url
+    page = await _crawl_url(sub.input_value)
+    if not page:
+        return None
+
+    external_id = hashlib.sha1(sub.input_value.encode()).hexdigest()[:24]
+    stmt = (
+        sqlite_insert(Item)
+        .values(
+            source="submission", external_id=external_id, url=sub.input_value,
+            title=(page.get("title") or sub.input_value[:200])[:2000],
+            abstract=(page.get("description") or (page.get("markdown") or "")[:500])[:5000] or None,
+            item_metadata={"submitted_by": sub.submitted_by, "submission_id": sub.id},
+            keyword_score=0, llm_score=0, priority="WATCH", status="submitted",
+            free_tags=["제보"],
+        )
+        .on_conflict_do_nothing(index_elements=["source", "external_id"])
+    )
+    await db.execute(stmt)
+    await db.flush()
+    return (await db.execute(
+        select(Item.id).where(Item.source == "submission", Item.external_id == external_id)
+    )).scalar_one_or_none()
+
+
+async def _process_keyword_submission(db: AsyncSession, sub: Submission) -> int | None:
+    from app.sources.crawl4ai_src import search_crawl4ai
+    results = await search_crawl4ai(sub.input_value, limit=1, tags=["제보"])
+    if not results:
+        return None
+
+    best = results[0]
+    external_id = hashlib.sha1(best["url"].encode()).hexdigest()[:24]
+    stmt = (
+        sqlite_insert(Item)
+        .values(
+            source="submission", external_id=external_id, url=best["url"],
+            title=(best.get("title") or sub.input_value)[:2000],
+            abstract=(best.get("excerpt") or "")[:5000] or None,
+            item_metadata={"submitted_by": sub.submitted_by, "submission_id": sub.id},
+            keyword_score=0, llm_score=0, priority="WATCH", status="submitted",
+            free_tags=["제보"],
+        )
+        .on_conflict_do_nothing(index_elements=["source", "external_id"])
+    )
+    await db.execute(stmt)
+    await db.flush()
+    return (await db.execute(
+        select(Item.id).where(Item.source == "submission", Item.external_id == external_id)
+    )).scalar_one_or_none()
+
+
+# ── Step 2: Feed Filtering (Gemma4) ─────────────────────────
+
+async def step_filter_feed() -> dict:
+    """Gemma4 filters today's new feed items for VFX relevance."""
+    from app.tasks.arca_brain import filter_feed_items
+
+    kept = 0
+    removed = 0
+
+    async with SessionLocal() as db:
+        # Get feed items from last 24h that haven't been filtered yet
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+        stmt = select(FeedItem).where(
+            FeedItem.discovered_at >= since,
+        ).order_by(FeedItem.discovered_at.desc()).limit(100)
+        feed_items = list((await db.execute(stmt)).scalars().all())
+
+        if not feed_items:
+            return {"step": "feed_filter", "kept": 0, "removed": 0, "total": 0}
+
+        # Build dicts for Gemma
+        item_dicts = [
+            {"title": fi.title, "excerpt": fi.excerpt, "source": fi.source}
+            for fi in feed_items
+        ]
+
+        # Call Gemma4 in batches
+        batch_size = 20
+        for i in range(0, len(item_dicts), batch_size):
+            batch = item_dicts[i:i + batch_size]
+            batch_feed = feed_items[i:i + batch_size]
+
+            results = await asyncio.get_running_loop().run_in_executor(
+                None, lambda b=batch: filter_feed_items(b)
+            )
+
+            for j, result in enumerate(results):
+                if j >= len(batch_feed):
+                    break
+                fi = batch_feed[j]
+
+                relevant = result.get("relevant", True)
+                tags = result.get("tags", [])
+
+                if relevant:
+                    fi.tags = list(set((fi.tags or []) + tags))
+                    kept += 1
+                else:
+                    # Mark as irrelevant (don't delete, just tag)
+                    fi.tags = list(set((fi.tags or []) + ["_irrelevant"]))
+                    removed += 1
+
+        await db.commit()
+
+    logger.info(f"[night] feed filter: {kept} kept, {removed} removed (out of {len(feed_items)})")
+    return {"step": "feed_filter", "kept": kept, "removed": removed, "total": len(feed_items)}
+
+
+# ── Step 3: Item Scoring (Gemma4) ────────────────────────────
+
+async def step_score_items() -> dict:
+    """Gemma4 scores unscored items (llm_score=0)."""
+    from app.tasks.arca_brain import score_items
+
+    scored = 0
+
+    async with SessionLocal() as db:
+        stmt = select(Item).where(Item.llm_score == 0).order_by(
+            Item.discovered_at.desc()
+        ).limit(50)
+        items = list((await db.execute(stmt)).scalars().all())
+
+        if not items:
+            return {"step": "scoring", "scored": 0, "total": 0}
+
+        # Score in batches
+        for i in range(0, len(items), SCORE_BATCH_SIZE):
+            batch = items[i:i + SCORE_BATCH_SIZE]
+            batch_dicts = [
+                {"source": it.source, "title": it.title, "abstract": it.abstract}
+                for it in batch
+            ]
+
+            results = await asyncio.get_running_loop().run_in_executor(
+                None, lambda b=batch_dicts: score_items(b)
+            )
+
+            for j, result in enumerate(results):
+                if j >= len(batch):
+                    break
+                item = batch[j]
+
+                score = result.get("relevancy_score", 0)
+                try:
+                    score = max(0, min(10, int(score)))
+                except (TypeError, ValueError):
+                    score = 0
+
+                item.llm_score = score
+                item.priority = result.get("priority", "WATCH")
+                item.llm_reason = str(result.get("reason", ""))[:500]
+
+                # Free tags from Gemma
+                new_tags = result.get("tags", [])
+                if new_tags:
+                    existing = item.free_tags or []
+                    item.free_tags = list(set(existing + new_tags))
+
+                # Store verdict in metadata
+                md = dict(item.item_metadata or {})
+                md["arca"] = {
+                    "verdict": str(result.get("verdict", ""))[:300],
+                    "category": result.get("category", ""),
+                }
+                item.item_metadata = md
+
+                scored += 1
+
+        await db.commit()
+
+    logger.info(f"[night] scoring: {scored} items scored")
+    return {"step": "scoring", "scored": scored, "total": len(items)}
+
+
+# ── Step 4: Grouper ─────────────────────────────────────────
 
 async def step_run_grouper() -> dict:
-    """Step 2: Re-run item grouper."""
+    """Re-run item grouper for cross-source matching."""
     try:
         from app.tasks.grouper import group_items
         result = await group_items()
         logger.info(f"[night] grouper: {result}")
-        return result
+        return {"step": "grouper", **result}
     except Exception as e:
         logger.exception("[night] grouper failed")
-        return {"error": str(e)}
+        return {"step": "grouper", "error": str(e)}
 
+
+# ── Step 5: Category Promotion (Gemma4) ─────────────────────
 
 async def step_detect_promotions() -> dict:
-    """Step 3: Aggregate free_tags and create category suggestions for popular tags."""
-    from sqlalchemy import text
+    """Aggregate tags, ask Gemma4 to suggest new categories."""
+    from app.tasks.arca_brain import suggest_category_promotion
 
-    created = 0
+    new_suggestions = 0
+
     async with SessionLocal() as db:
-        # Count free_tags across items
+        # Count free_tags
         stmt = text("""
             SELECT j.value AS tag, COUNT(*) AS cnt
             FROM items, json_each(items.free_tags) AS j
-            WHERE j.value NOT IN ('제보')
+            WHERE j.value NOT IN ('제보', '_irrelevant')
             GROUP BY j.value
             HAVING cnt >= :threshold
             ORDER BY cnt DESC
@@ -184,47 +284,74 @@ async def step_detect_promotions() -> dict:
         rows = (await db.execute(stmt, {"threshold": PROMOTION_THRESHOLD})).fetchall()
 
         for tag, count in rows:
-            # Skip if suggestion already exists
-            existing = (
-                await db.execute(
-                    select(CategorySuggestion).where(CategorySuggestion.tag == tag)
-                )
-            ).scalar_one_or_none()
+            existing = (await db.execute(
+                select(CategorySuggestion).where(CategorySuggestion.tag == tag)
+            )).scalar_one_or_none()
 
             if existing:
                 existing.item_count = count
                 continue
 
-            sug = CategorySuggestion(
-                tag=tag,
-                item_count=count,
-                status="pending",
+            # Get sample titles for this tag
+            sample_stmt = text("""
+                SELECT i.title FROM items i, json_each(i.free_tags) AS j
+                WHERE j.value = :tag LIMIT 5
+            """)
+            samples = [r[0] for r in (await db.execute(sample_stmt, {"tag": tag})).fetchall()]
+
+            # Ask Gemma4
+            suggestion = await asyncio.get_running_loop().run_in_executor(
+                None, lambda t=tag, c=count, s=samples: suggest_category_promotion(t, c, s)
             )
-            db.add(sug)
-            created += 1
+
+            if suggestion and suggestion.get("should_promote"):
+                sug = CategorySuggestion(
+                    tag=tag,
+                    item_count=count,
+                    suggested_name_ko=suggestion.get("suggested_name_ko"),
+                    suggested_name_en=suggestion.get("suggested_name_en"),
+                    suggested_keywords=suggestion.get("suggested_keywords", []),
+                    arca_reason=suggestion.get("reason"),
+                    status="pending",
+                )
+                db.add(sug)
+                new_suggestions += 1
 
         await db.commit()
 
-    logger.info(f"[night] promotions: {len(rows)} tags above threshold, {created} new suggestions")
-    return {"tags_above_threshold": len(rows), "new_suggestions": created}
+    logger.info(f"[night] promotions: {len(rows)} tags, {new_suggestions} new suggestions")
+    return {"step": "promotions", "tags_above_threshold": len(rows), "new_suggestions": new_suggestions}
 
+
+# ── Main Pipeline ────────────────────────────────────────────
 
 async def run_night_batch() -> list[dict]:
-    """Full night batch pipeline."""
-    logger.info("=== Night batch started ===")
+    """Full night batch pipeline with Gemma4 brain."""
+    logger.info("========== Night Batch Started ==========")
     results = []
 
-    # Step 1: submissions
+    # Step 1: Process submissions (Crawl4AI)
     r = await step_process_submissions()
-    results.append({"step": "submissions", **r})
+    results.append(r)
 
-    # Step 2: grouper
+    # Step 2: Filter feed items (Gemma4)
+    r = await step_filter_feed()
+    results.append(r)
+
+    # Step 3: Score unscored items (Gemma4)
+    r = await step_score_items()
+    results.append(r)
+
+    # Step 4: Grouper (no Gemma)
     r = await step_run_grouper()
-    results.append({"step": "grouper", **r})
+    results.append(r)
 
-    # Step 3: tag promotion detection
+    # Step 5: Category promotion (Gemma4)
     r = await step_detect_promotions()
-    results.append({"step": "promotions", **r})
+    results.append(r)
 
-    logger.info(f"=== Night batch done: {results} ===")
+    logger.info(f"========== Night Batch Done ==========")
+    for r in results:
+        logger.info(f"  {r}")
+
     return results
