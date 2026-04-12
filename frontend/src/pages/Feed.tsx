@@ -4,7 +4,7 @@ import { Flame, RefreshCw, Bookmark, Globe } from "lucide-react";
 import { fetchFeed, triggerFeedCrawl } from "../api/feed";
 import FeedCard from "../components/FeedCard";
 
-type Tab = "all" | "firecrawl" | "reddit" | "saved";
+type Tab = "all" | "crawl4ai" | "reddit" | "saved";
 
 export default function Feed() {
   const [tab, setTab] = useState<Tab>("all");
@@ -39,7 +39,7 @@ export default function Feed() {
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: "all", label: "전체", icon: Flame },
-    { id: "firecrawl", label: "웹/뉴스", icon: Globe },
+    { id: "crawl4ai", label: "웹/뉴스", icon: Globe },
     { id: "reddit", label: "Reddit", icon: Flame },
     { id: "saved", label: "북마크", icon: Bookmark },
   ];
@@ -103,7 +103,7 @@ export default function Feed() {
             <p className="text-xs text-neutral-600">
               우측 상단 "지금 수집" 버튼을 눌러 시작하세요.
               <br />
-              Firecrawl을 띄우지 않으면 Reddit만 수집됩니다.
+              Crawl4AI가 설치되지 않으면 Reddit만 수집됩니다.
             </p>
           )}
         </div>

@@ -101,7 +101,7 @@ async def trigger_feed_source(
     background: BackgroundTasks,
     wait: bool = Query(False),
 ):
-    if source not in ("firecrawl", "reddit"):
+    if source not in ("crawl4ai", "reddit"):
         raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
     if wait:
         result = await crawl_feed_source(source)
