@@ -16,6 +16,7 @@ from app.routers import (
     lineage,
     search,
     stats,
+    submissions,
 )
 from app.tasks import shutdown_scheduler, start_scheduler
 
@@ -64,6 +65,7 @@ app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(stats.router, prefix=settings.api_prefix)
 app.include_router(lineage.router, prefix=settings.api_prefix)
 app.include_router(feed.router, prefix=settings.api_prefix)
+app.include_router(submissions.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
 
 

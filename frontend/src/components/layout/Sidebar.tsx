@@ -1,11 +1,12 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, GitBranch, Film, Flame } from "lucide-react";
+import { LayoutDashboard, Calendar, GitBranch, Film, Flame, Send } from "lucide-react";
 
 const navItems = [
   { to: "/", label: "대시보드", icon: LayoutDashboard },
   { to: "/timeline", label: "타임라인", icon: Calendar },
   { to: "/graph", label: "기술 계보", icon: GitBranch },
   { to: "/feed", label: "실전 피드", icon: Flame },
+  { to: "/submit", label: "제보", icon: Send },
 ];
 
 export default function Sidebar() {

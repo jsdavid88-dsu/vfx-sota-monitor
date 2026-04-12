@@ -5,6 +5,7 @@ from app.models.lineage import LineageEdge
 from app.models.comment import Comment
 from app.models.crawl_run import CrawlRun
 from app.models.feed_item import FeedItem
+from app.models.submission import Submission
 
 __all__ = [
     "Category",
@@ -15,4 +16,5 @@ __all__ = [
     "Comment",
     "CrawlRun",
     "FeedItem",
+    "Submission",
 ]
