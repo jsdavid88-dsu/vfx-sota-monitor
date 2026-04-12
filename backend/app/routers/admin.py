@@ -160,6 +160,22 @@ async def trigger_group_items(
     return {"status": "started"}
 
 
+@router.post("/night-batch")
+async def trigger_night_batch(
+    background: BackgroundTasks,
+    wait: bool = Query(False),
+    _: None = Depends(verify_admin_token),
+):
+    """Run the full night batch pipeline (submissions + grouper + promotions)."""
+    from app.tasks.night_batch import run_night_batch
+
+    if wait:
+        results = await run_night_batch()
+        return {"status": "done", "results": results}
+    background.add_task(run_night_batch)
+    return {"status": "started"}
+
+
 @router.get("/runs")
 async def list_runs(
     limit: int = Query(20, le=100),
