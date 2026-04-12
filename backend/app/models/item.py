@@ -38,6 +38,9 @@ class Item(Base):
     priority: Mapped[str | None] = mapped_column(String(10))  # P0/P1/P2/P3/WATCH
     status: Mapped[str] = mapped_column(String(20), default="new")
 
+    # Free-form tags (Arca-assigned, for uncategorized items and category evolution)
+    free_tags: Mapped[list] = mapped_column(JSON, default=list)
+
     # Grouping — same research across multiple sources (arxiv + github + hf)
     group_id: Mapped[int | None] = mapped_column(
         ForeignKey("item_groups.id", ondelete="SET NULL"), nullable=True, index=True

@@ -6,6 +6,7 @@ from app.models.comment import Comment
 from app.models.crawl_run import CrawlRun
 from app.models.feed_item import FeedItem
 from app.models.submission import Submission
+from app.models.category_suggestion import CategorySuggestion
 
 __all__ = [
     "Category",
