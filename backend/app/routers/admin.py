@@ -15,6 +15,7 @@ from app.models import CrawlRun, Item, ItemCategory
 from app.schemas.admin import CrawlResult, PendingItem, ScoreUpdate, ScoreUpdateResult
 from app.tasks.code_linker import link_codes_for_arxiv_items
 from app.tasks.crawler import SOURCE_LABELS, crawl_all, crawl_source
+from app.tasks.grouper import group_items
 from app.tasks.lineage_builder import build_lineage_for_new_items
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -142,6 +143,20 @@ async def trigger_build_lineage(
         total = await build_lineage_for_new_items(max_items=max_items)
         return {"status": "done", "edges_added": total}
     background.add_task(build_lineage_for_new_items, max_items)
+    return {"status": "started"}
+
+
+@router.post("/group-items")
+async def trigger_group_items(
+    background: BackgroundTasks,
+    wait: bool = Query(False),
+    _: None = Depends(verify_admin_token),
+):
+    """Run the item grouper to unify same research across sources."""
+    if wait:
+        result = await group_items()
+        return {"status": "done", **result}
+    background.add_task(group_items)
     return {"status": "started"}
 
 

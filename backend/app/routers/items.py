@@ -6,9 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.constants import SOURCE_ORDER
 from app.database import get_db
 from app.models import Category, Item, ItemCategory
 from app.schemas.item import ItemRead
+from app.serializers import serialize_item
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -20,28 +22,6 @@ SORT_MAP = {
     "keyword_score": Item.keyword_score.desc(),
     "priority": Item.priority.asc(),
 }
-
-
-def _serialize(item: Item) -> ItemRead:
-    cat_slugs = [ic.category.slug for ic in item.categories if ic.category]
-    return ItemRead(
-        id=item.id,
-        source=item.source,
-        external_id=item.external_id,
-        url=item.url,
-        title=item.title,
-        abstract=item.abstract,
-        authors=item.authors,
-        published_at=item.published_at,
-        discovered_at=item.discovered_at,
-        metadata=item.item_metadata or {},
-        keyword_score=item.keyword_score,
-        llm_score=item.llm_score,
-        llm_reason=item.llm_reason,
-        priority=item.priority,
-        status=item.status,
-        category_slugs=cat_slugs,
-    )
 
 
 @router.get("", response_model=list[ItemRead])
@@ -74,7 +54,7 @@ async def list_items(
     stmt = stmt.order_by(order_by).offset(offset).limit(limit)
     result = await db.execute(stmt)
     items = result.scalars().unique().all()
-    return [_serialize(i) for i in items]
+    return [serialize_item(i) for i in items]
 
 
 @router.get("/{item_id}", response_model=ItemRead)
@@ -88,4 +68,23 @@ async def get_item(item_id: int, db: AsyncSession = Depends(get_db)):
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    return _serialize(item)
+    return serialize_item(item)
+
+
+@router.get("/{item_id}/siblings", response_model=list[ItemRead])
+async def get_group_siblings(item_id: int, db: AsyncSession = Depends(get_db)):
+    """Return all items sharing the same group_id (excluding self)."""
+    anchor = await db.get(Item, item_id)
+    if not anchor or not anchor.group_id:
+        return []
+    stmt = (
+        select(Item)
+        .options(selectinload(Item.categories).selectinload(ItemCategory.category))
+        .where(Item.group_id == anchor.group_id, Item.id != item_id)
+    )
+    result = await db.execute(stmt)
+    siblings = sorted(
+        result.scalars().unique().all(),
+        key=lambda i: SOURCE_ORDER.get(i.source, 9),
+    )
+    return [serialize_item(s) for s in siblings]

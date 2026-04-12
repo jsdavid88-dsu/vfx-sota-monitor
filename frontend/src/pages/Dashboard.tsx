@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles, TrendingUp, AlertCircle, Clock } from "lucide-react";
 import { fetchCategories } from "../api/categories";
@@ -5,6 +7,7 @@ import { fetchSummary } from "../api/stats";
 import { fetchItems } from "../api/items";
 import CategorySection from "../components/CategorySection";
 import ItemCard from "../components/ItemCard";
+import { dedup } from "../utils/dedup";
 
 function StatCard({
   icon: Icon,
@@ -38,10 +41,14 @@ export default function Dashboard() {
     queryFn: fetchCategories,
   });
   const { data: summary } = useQuery({ queryKey: ["summary"], queryFn: fetchSummary });
-  const { data: p0Items = [] } = useQuery({
+  const { data: p0Raw = [] } = useQuery({
     queryKey: ["items", { priority: "P0" }],
-    queryFn: () => fetchItems({ priority: "P0", limit: 5 }),
+    queryFn: () => fetchItems({ priority: "P0", limit: 10 }),
   });
+  const { deduped: p0Items, groupSources: p0Groups } = useMemo(
+    () => dedup(p0Raw),
+    [p0Raw],
+  );
 
   const sortedCategories = [...categories].sort((a, b) => {
     if (a.item_count === 0 && b.item_count > 0) return 1;
@@ -96,8 +103,12 @@ export default function Dashboard() {
             긴급 (P0)
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {p0Items.map((item) => (
-              <ItemCard key={item.id} item={item} />
+            {p0Items.slice(0, 5).map((item) => (
+              <ItemCard
+                key={item.id}
+                item={item}
+                groupSources={item.group_id ? p0Groups.get(item.group_id) : undefined}
+              />
             ))}
           </div>
         </section>
@@ -118,14 +129,14 @@ export default function Dashboard() {
           </h2>
           <div className="flex flex-wrap gap-2">
             {emptyCategories.map((cat) => (
-              <a
+              <Link
                 key={cat.slug}
-                href={`/category/${cat.slug}`}
+                to={`/category/${cat.slug}`}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-1.5 text-xs text-neutral-400 hover:border-neutral-700"
               >
                 <span>{cat.icon}</span>
                 <span>{cat.name_ko}</span>
-              </a>
+              </Link>
             ))}
           </div>
         </section>

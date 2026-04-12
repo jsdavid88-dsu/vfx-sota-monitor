@@ -7,30 +7,9 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Item, ItemCategory
 from app.schemas.item import ItemRead
+from app.serializers import serialize_item
 
 router = APIRouter(prefix="/search", tags=["search"])
-
-
-def _serialize(item: Item) -> ItemRead:
-    cat_slugs = [ic.category.slug for ic in item.categories if ic.category]
-    return ItemRead(
-        id=item.id,
-        source=item.source,
-        external_id=item.external_id,
-        url=item.url,
-        title=item.title,
-        abstract=item.abstract,
-        authors=item.authors,
-        published_at=item.published_at,
-        discovered_at=item.discovered_at,
-        metadata=item.item_metadata or {},
-        keyword_score=item.keyword_score,
-        llm_score=item.llm_score,
-        llm_reason=item.llm_reason,
-        priority=item.priority,
-        status=item.status,
-        category_slugs=cat_slugs,
-    )
 
 
 @router.get("", response_model=list[ItemRead])
@@ -58,4 +37,4 @@ async def search_items(
     )
     result = await db.execute(stmt)
     items = result.scalars().unique().all()
-    return [_serialize(i) for i in items]
+    return [serialize_item(i) for i in items]

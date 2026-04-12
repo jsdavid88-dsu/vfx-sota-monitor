@@ -30,3 +30,4 @@ class ItemRead(ItemBase):
     priority: str | None = None
     status: str = "new"
     category_slugs: list[str] = []
+    group_id: int | None = None

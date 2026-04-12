@@ -38,6 +38,11 @@ class Item(Base):
     priority: Mapped[str | None] = mapped_column(String(10))  # P0/P1/P2/P3/WATCH
     status: Mapped[str] = mapped_column(String(20), default="new")
 
+    # Grouping — same research across multiple sources (arxiv + github + hf)
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("item_groups.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     categories = relationship("ItemCategory", back_populates="item", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="item", cascade="all, delete-orphan")
 

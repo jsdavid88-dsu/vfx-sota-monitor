@@ -118,13 +118,12 @@ def infer_priority(keyword_score: int, metadata: dict | None = None) -> str:
     Real priority assignment happens in Phase 3 via Gemma 4.
     This is a fallback so items visible on the dashboard before LLM runs.
     """
+    from app.constants import PRIORITY_THRESHOLDS
+
     md = metadata or {}
     stars = md.get("stars", 0) or 0
 
-    if keyword_score >= 5 or stars >= 500:
-        return "P1"
-    if keyword_score >= 3 or stars >= 100:
-        return "P2"
-    if keyword_score >= 1:
-        return "P3"
+    for priority, thresh in PRIORITY_THRESHOLDS:
+        if keyword_score >= thresh["keyword_score"] or stars >= thresh["stars"]:
+            return priority
     return "WATCH"

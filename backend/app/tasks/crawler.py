@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants import FETCH_LIMITS, SOURCES
 from app.database import SessionLocal
 from app.models import Category, CrawlRun, Item, ItemCategory
 from app.scoring.keyword import ScoreResult, infer_priority, score_items
@@ -23,7 +24,8 @@ from app.sources.base import FetchedItem
 
 logger = logging.getLogger(__name__)
 
-SOURCE_LABELS = ["arxiv", "github", "huggingface", "reddit", "x"]
+# Re-export as list for backward compat (admin.py imports this)
+SOURCE_LABELS: list[str] = list(SOURCES)
 
 
 async def _load_categories(db: AsyncSession) -> list[Category]:
@@ -47,38 +49,52 @@ async def _fetch_source(source: str, cats: list[Category]) -> list[FetchedItem]:
     items: list[FetchedItem] = []
 
     if source == "arxiv":
-        # arXiv queried once globally (category-agnostic, filter via scoring)
+        ax = FETCH_LIMITS["arxiv"]
         arxiv_cats = _collect_arxiv_categories(cats) or None
-        items = await loop.run_in_executor(None, lambda: fetch_arxiv(arxiv_cats, 150, 2))
+        items = await loop.run_in_executor(
+            None, lambda: fetch_arxiv(arxiv_cats, ax["max_results"], ax["days_back"])
+        )
 
     elif source == "github":
+        gh = FETCH_LIMITS["github"]
         for cat in cats:
             try:
                 sub = await loop.run_in_executor(
                     None,
-                    lambda c=cat: fetch_github(c.keywords or [], c.github_topics or [], 7, 20),
+                    lambda c=cat: fetch_github(
+                        c.keywords or [], c.github_topics or [],
+                        gh["days_back"], gh["per_category"],
+                    ),
                 )
                 items.extend(sub)
             except Exception as e:
                 logger.warning(f"GitHub fetch failed for {cat.slug}: {e}")
 
     elif source == "huggingface":
+        hf = FETCH_LIMITS["huggingface"]
         for cat in cats:
             try:
                 sub = await loop.run_in_executor(
                     None,
-                    lambda c=cat: fetch_huggingface(c.keywords or [], c.hf_tags or [], 7, 20),
+                    lambda c=cat: fetch_huggingface(
+                        c.keywords or [], c.hf_tags or [],
+                        hf["days_back"], hf["per_category"],
+                    ),
                 )
                 items.extend(sub)
             except Exception as e:
                 logger.warning(f"HF fetch failed for {cat.slug}: {e}")
 
     elif source == "reddit":
+        rd = FETCH_LIMITS["reddit"]
         for cat in cats:
             try:
                 sub = await loop.run_in_executor(
                     None,
-                    lambda c=cat: fetch_reddit(c.subreddits or [], c.keywords or [], 3, 20),
+                    lambda c=cat: fetch_reddit(
+                        c.subreddits or [], c.keywords or [],
+                        rd["days_back"], rd["per_category"],
+                    ),
                 )
                 items.extend(sub)
             except Exception as e:
@@ -213,7 +229,7 @@ async def crawl_source(source: str) -> dict:
 
 
 async def crawl_all() -> list[dict]:
-    """Run all sources sequentially."""
+    """Run all sources sequentially, then re-group items across sources."""
     results = []
     for src in SOURCE_LABELS:
         try:
@@ -222,4 +238,16 @@ async def crawl_all() -> list[dict]:
         except Exception as e:
             logger.exception(f"crawl_all: {src} errored")
             results.append({"source": src, "error": str(e)})
+
+    # Unify same research across arxiv/github/huggingface into groups.
+    # Runs after all sources so cross-source merging has complete data.
+    try:
+        from app.tasks.grouper import group_items
+
+        stats = await group_items()
+        results.append({"source": "grouper", **stats})
+    except Exception as e:
+        logger.exception("crawl_all: grouper errored")
+        results.append({"source": "grouper", "error": str(e)})
+
     return results

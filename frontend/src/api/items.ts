@@ -30,3 +30,5 @@ export const fetchItems = (filters: ItemFilters = {}) => {
 };
 
 export const fetchItem = (id: number) => apiGet<Item>(`/items/${id}`);
+
+export const fetchSiblings = (id: number) => apiGet<Item[]>(`/items/${id}/siblings`);

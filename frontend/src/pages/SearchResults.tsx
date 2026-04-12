@@ -1,17 +1,20 @@
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { searchItems } from "../api/search";
 import ItemCard from "../components/ItemCard";
+import { dedup } from "../utils/dedup";
 
 export default function SearchResults() {
   const [params] = useSearchParams();
   const q = params.get("q") || "";
 
-  const { data: items = [], isLoading } = useQuery({
+  const { data: rawItems = [], isLoading } = useQuery({
     queryKey: ["search", q],
     queryFn: () => searchItems(q),
     enabled: q.length >= 2,
   });
+  const { deduped: items, groupSources } = useMemo(() => dedup(rawItems), [rawItems]);
 
   return (
     <div className="space-y-6">
@@ -33,7 +36,11 @@ export default function SearchResults() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {items.map((item) => (
-            <ItemCard key={item.id} item={item} />
+            <ItemCard
+              key={item.id}
+              item={item}
+              groupSources={item.group_id ? groupSources.get(item.group_id) : undefined}
+            />
           ))}
         </div>
       )}

@@ -1,13 +1,43 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ExternalLink, Star } from "lucide-react";
-import { fetchItem } from "../api/items";
+import { ChevronLeft, ExternalLink, Star, Layers } from "lucide-react";
+import { fetchItem, fetchSiblings } from "../api/items";
 import { fetchItemLineage } from "../api/lineage";
+import type { Item } from "../types";
 import SourceBadge from "../components/SourceBadge";
 import PriorityBadge from "../components/PriorityBadge";
 import LineageFlow from "../components/LineageFlow";
 import CommentSection from "../components/CommentSection";
 import ArcaPanel, { type ArcaAnalysis } from "../components/ArcaPanel";
+
+function SiblingRow({ item }: { item: Item }) {
+  const navigate = useNavigate();
+  return (
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => navigate(`/item/${item.id}`)}
+      onKeyDown={(e) => e.key === "Enter" && navigate(`/item/${item.id}`)}
+      className="flex items-center gap-3 rounded-lg border border-neutral-700 bg-neutral-800/50 px-4 py-3 hover:border-brand-500/40 transition cursor-pointer"
+    >
+      <SourceBadge source={item.source} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-neutral-200 truncate">{item.title}</div>
+        <div className="text-[10px] text-neutral-500">{item.external_id}</div>
+      </div>
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-neutral-500 hover:text-neutral-300"
+        title="원문 열기"
+      >
+        <ExternalLink className="h-3.5 w-3.5" />
+      </a>
+    </div>
+  );
+}
 
 export default function ItemDetail() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +46,12 @@ export default function ItemDetail() {
   const { data: item } = useQuery({
     queryKey: ["item", id],
     queryFn: () => fetchItem(itemId!),
+    enabled: !!itemId,
+  });
+
+  const { data: siblings = [] } = useQuery({
+    queryKey: ["siblings", id],
+    queryFn: () => fetchSiblings(itemId!),
     enabled: !!itemId,
   });
 
@@ -91,6 +127,30 @@ export default function ItemDetail() {
       </article>
 
       {arca && <ArcaPanel analysis={arca} />}
+
+      {siblings.length > 0 && (
+        <section className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
+          <h2 className="text-sm font-semibold text-neutral-300 mb-3 flex items-center gap-2">
+            <Layers className="h-4 w-4 text-brand-400" />
+            같은 연구 ({siblings.length + 1}개 소스)
+          </h2>
+          <div className="space-y-3">
+            {/* Current item first */}
+            <div className="flex items-center gap-3 rounded-lg border border-brand-500/30 bg-brand-500/5 px-4 py-3">
+              <SourceBadge source={item.source} />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-neutral-100 truncate">{item.title}</div>
+                <div className="text-[10px] text-neutral-500">{item.external_id}</div>
+              </div>
+              <span className="text-[10px] text-brand-400 whitespace-nowrap">현재 보는 중</span>
+            </div>
+            {/* Siblings: arxiv → github → hf order (already sorted by backend) */}
+            {siblings.map((sib) => (
+              <SiblingRow key={sib.id} item={sib} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {item.category_slugs.length > 0 && (
         <div>

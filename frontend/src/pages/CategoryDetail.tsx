@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
@@ -6,6 +6,7 @@ import { fetchCategory } from "../api/categories";
 import { fetchItems, type ItemFilters } from "../api/items";
 import ItemCard from "../components/ItemCard";
 import FilterPanel from "../components/FilterPanel";
+import { dedup } from "../utils/dedup";
 
 export default function CategoryDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -16,11 +17,12 @@ export default function CategoryDetail() {
     queryFn: () => fetchCategory(slug!),
     enabled: !!slug,
   });
-  const { data: items = [] } = useQuery({
+  const { data: rawItems = [] } = useQuery({
     queryKey: ["items", { category: slug, ...filters }],
-    queryFn: () => fetchItems({ ...filters, category: slug, limit: 100 }),
+    queryFn: () => fetchItems({ ...filters, category: slug, limit: 200 }),
     enabled: !!slug,
   });
+  const { deduped: items, groupSources } = useMemo(() => dedup(rawItems), [rawItems]);
 
   if (!category) {
     return <div className="text-neutral-500">Loading...</div>;
@@ -88,7 +90,11 @@ export default function CategoryDetail() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {items.map((item) => (
-              <ItemCard key={item.id} item={item} />
+              <ItemCard
+                key={item.id}
+                item={item}
+                groupSources={item.group_id ? groupSources.get(item.group_id) : undefined}
+              />
             ))}
           </div>
         )}

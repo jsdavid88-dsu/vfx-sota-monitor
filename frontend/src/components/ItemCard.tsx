@@ -1,33 +1,22 @@
 import { Link } from "react-router-dom";
 import { ExternalLink, Star, Github } from "lucide-react";
 import type { Item } from "../types";
+import { getCodeLinks, getArcaVerdict } from "../utils/metadata";
 import SourceBadge from "./SourceBadge";
 import PriorityBadge from "./PriorityBadge";
 
-type CodeLink = {
-  name: string;
-  url: string;
-  stars: number;
-  description?: string;
-};
-
-function getCodeLinks(item: Item): CodeLink[] {
-  const md = item.metadata as Record<string, unknown>;
-  const links = md?.code_links;
-  if (Array.isArray(links)) return links as CodeLink[];
-  return [];
-}
-
-function getArcaVerdict(item: Item): string | null {
-  const md = item.metadata as Record<string, unknown> | undefined;
-  const arca = md?.arca as { verdict?: string } | undefined;
-  return arca?.verdict || null;
-}
-
-export default function ItemCard({ item }: { item: Item }) {
+export default function ItemCard({
+  item,
+  groupSources,
+}: {
+  item: Item;
+  groupSources?: Item["source"][];
+}) {
   const score = item.llm_score || item.keyword_score;
   const codeLinks = getCodeLinks(item);
   const verdict = getArcaVerdict(item);
+  // Other sources in the same group (excluding current)
+  const otherSources = groupSources?.filter((s) => s !== item.source) ?? [];
 
   return (
     <Link
@@ -37,6 +26,9 @@ export default function ItemCard({ item }: { item: Item }) {
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="flex items-center gap-2 flex-wrap">
           <SourceBadge source={item.source} />
+          {otherSources.map((s) => (
+            <SourceBadge key={s} source={s} muted />
+          ))}
           <PriorityBadge priority={item.priority} />
           {score > 0 && (
             <span className="inline-flex items-center gap-1 text-xs text-amber-400">

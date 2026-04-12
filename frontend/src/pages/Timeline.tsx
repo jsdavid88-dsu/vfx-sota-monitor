@@ -1,12 +1,15 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchItems } from "../api/items";
 import ItemCard from "../components/ItemCard";
+import { dedup } from "../utils/dedup";
 
 export default function Timeline() {
-  const { data: items = [] } = useQuery({
+  const { data: rawItems = [] } = useQuery({
     queryKey: ["items", "timeline"],
-    queryFn: () => fetchItems({ limit: 100 }),
+    queryFn: () => fetchItems({ limit: 200 }),
   });
+  const { deduped: items, groupSources } = useMemo(() => dedup(rawItems), [rawItems]);
 
   // 날짜별 그룹핑
   const grouped = items.reduce<Record<string, typeof items>>((acc, item) => {
@@ -39,7 +42,11 @@ export default function Timeline() {
               </div>
               <div className="ml-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {dateItems.map((item) => (
-                  <ItemCard key={item.id} item={item} />
+                  <ItemCard
+                    key={item.id}
+                    item={item}
+                    groupSources={item.group_id ? groupSources.get(item.group_id) : undefined}
+                  />
                 ))}
               </div>
             </section>

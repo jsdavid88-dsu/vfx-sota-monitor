@@ -33,6 +33,7 @@ export type Item = {
   priority: "P0" | "P1" | "P2" | "P3" | "WATCH" | null;
   status: string;
   category_slugs: string[];
+  group_id: number | null;
 };
 
 export type DashboardSummary = {

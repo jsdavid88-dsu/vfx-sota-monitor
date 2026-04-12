@@ -1,24 +1,28 @@
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { fetchItems } from "../api/items";
 import type { Category } from "../types";
 import ItemCard from "./ItemCard";
+import { dedup } from "../utils/dedup";
 
 type Props = {
   category: Category;
 };
 
 export default function CategorySection({ category }: Props) {
-  const { data: items = [] } = useQuery({
+  const { data: rawItems = [] } = useQuery({
     queryKey: ["items", "category-section", category.slug],
     queryFn: () =>
       fetchItems({
         category: category.slug,
         sort: "discovered",
-        limit: 6,
+        limit: 12,
       }),
   });
+  const { deduped, groupSources } = useMemo(() => dedup(rawItems), [rawItems]);
+  const items = deduped.slice(0, 6);
 
   if (items.length === 0 && category.item_count === 0) {
     return null;
@@ -72,7 +76,11 @@ export default function CategorySection({ category }: Props) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
           {items.map((item) => (
-            <ItemCard key={item.id} item={item} />
+            <ItemCard
+              key={item.id}
+              item={item}
+              groupSources={item.group_id ? groupSources.get(item.group_id) : undefined}
+            />
           ))}
         </div>
       )}
