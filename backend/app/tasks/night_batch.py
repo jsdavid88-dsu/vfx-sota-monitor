@@ -325,10 +325,43 @@ async def step_detect_promotions() -> dict:
 
 # ── Main Pipeline ────────────────────────────────────────────
 
+async def step_crawl_all_sources() -> dict:
+    """Step 0: Fresh crawl of all sources before analysis."""
+    try:
+        from app.tasks.crawler import crawl_all
+        from app.tasks.feed_crawler import crawl_feed_all
+
+        # Research sources (arxiv/github/hf/reddit)
+        research_results = await crawl_all()
+        research_new = sum(r.get("new", 0) for r in research_results if isinstance(r, dict))
+
+        # Feed sources (youtube/x/hf_trending/crawl4ai/reddit)
+        feed_results = await crawl_feed_all()
+        feed_new = sum(r.get("new", 0) for r in feed_results if isinstance(r, dict))
+
+        logger.info(f"[night] crawl: research={research_new} new, feed={feed_new} new")
+        return {"step": "crawl", "research_new": research_new, "feed_new": feed_new}
+    except Exception as e:
+        logger.exception("[night] crawl failed")
+        return {"step": "crawl", "error": str(e)}
+
+
 async def run_night_batch() -> list[dict]:
-    """Full night batch pipeline with Gemma4 brain."""
+    """Full night batch pipeline with Gemma4 brain.
+
+    0. Crawl all sources (fresh data)
+    1. Process submissions (Crawl4AI)
+    2. Filter feed items (Gemma4)
+    3. Score unscored items (Gemma4)
+    4. Grouper
+    5. Category promotion (Gemma4)
+    """
     logger.info("========== Night Batch Started ==========")
     results = []
+
+    # Step 0: Fresh crawl
+    r = await step_crawl_all_sources()
+    results.append(r)
 
     # Step 1: Process submissions (Crawl4AI)
     r = await step_process_submissions()

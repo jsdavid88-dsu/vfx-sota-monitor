@@ -1,4 +1,16 @@
-"""APScheduler setup — daily crawl + night batch."""
+"""APScheduler setup — daytime crawl + night batch (crawl + Gemma4 analysis).
+
+Schedule:
+  09:00 KST — 가벼운 크롤 (arxiv/github/hf/reddit, 키워드 스코어링만)
+  12:00, 18:00 KST — 피드 크롤 (YouTube/HF trending/Reddit)
+  21:00 KST — 야간 풀 배치:
+    0. 전체 크롤 (모든 소스 재수집)
+    1. 제보 처리
+    2. Gemma4 피드 필터링
+    3. Gemma4 스코어링
+    4. 그룹핑
+    5. Gemma4 카테고리 승격 감지
+"""
 from __future__ import annotations
 
 import logging
@@ -22,28 +34,27 @@ def start_scheduler() -> AsyncIOScheduler:
 
     _scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 
-    # 연구 크롤 — 매일 09:00 KST
+    # 낮 크롤 — 09:00 KST (가벼운 수집만, Gemma 안 씀)
     _scheduler.add_job(
         crawl_all,
         trigger=CronTrigger(hour=9, minute=0),
-        id="daily_research_crawl",
+        id="morning_research_crawl",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
     )
 
-    # 피드 크롤 — 6시간마다 (00:15, 06:15, 12:15, 18:15 KST)
+    # 피드 크롤 — 12:00, 18:00 KST (YouTube/HF/Reddit)
     _scheduler.add_job(
         crawl_feed_all,
-        trigger=CronTrigger(hour="0,6,12,18", minute=15),
-        id="feed_crawl",
+        trigger=CronTrigger(hour="12,18", minute=0),
+        id="daytime_feed_crawl",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
     )
 
-    # 야간 배치 — 매일 21:00 KST
-    # 제보 처리 + 그룹핑 + 태그 승격 감지
+    # 야간 풀 배치 — 21:00 KST (크롤 + Gemma4 분석 전부)
     _scheduler.add_job(
         run_night_batch,
         trigger=CronTrigger(hour=21, minute=0),
@@ -55,7 +66,7 @@ def start_scheduler() -> AsyncIOScheduler:
 
     _scheduler.start()
     logger.info(
-        "Scheduler started — research: 09:00 KST, feed: 6h, night batch: 21:00 KST"
+        "Scheduler started — morning crawl: 09:00, feed: 12:00/18:00, night batch: 21:00 KST"
     )
     return _scheduler
 
