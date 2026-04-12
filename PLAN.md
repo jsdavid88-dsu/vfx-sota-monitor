@@ -261,7 +261,14 @@ Docker 걷어내기 + SQLite 전환 + 네이티브 실행 가이드
 - GitHub 크롤러 검색 쿼리 수정 (괄호 버그, topic qualifier)
 - seed_sota.py 가짜 arxiv ID 13개 → 실제 ID 교체
 
-### Phase E — 제보 시스템 + 카테고리 진화 (다음)
+### Phase E — 제보 시스템 + 카테고리 진화
+
+#### E-1: 제보 탭 ✅ 완료
+#### E-2: 미분류 태그 + 카테고리 승격 ✅ 완료  
+#### E-3: 야간 배치 파이프라인 ✅ 완료
+
+<details>
+<summary>Phase E 상세 설계 (접기)</summary>
 
 #### E-1: 제보 탭 ("이거 봐봐")
 팀원 누구나 URL/키워드를 던지면 큐에 쌓이고, 야간 배치로 아르카가 조사.
@@ -339,6 +346,31 @@ pending submissions
 - 모델 Q4: ~18GB
 - KV 캐시 (TurboQuant 3bit, 128K): ~5GB
 - 여유: ~9GB
+
+**구현 단계:**
+1. Ollama 또는 llama.cpp에서 TurboQuant 공식 지원 확인 (PR 추적)
+   - llama.cpp 포크: TheTom, spiritbuun, Aaryan-Kapoor 등
+   - 플래그: `--cache-type-k turbo3 --cache-type-v turbo3`
+2. RTX 5090에 Gemma4 31B Q4 모델 다운로드
+   - `ollama pull gemma4:31b` 또는 GGUF 수동 변환
+3. TurboQuant 활성화 후 벤치마크
+   - 측정 항목: VRAM 사용량, 초당 토큰, tool calling 성공률
+   - 비교: 26B 기본 vs 31B+TurboQuant vs 31B 기본
+4. researcher.py 테스트 — 5턴 에이전트 루프에서 KV 캐시 절감 효과 확인
+5. config.yaml 변경만으로 전환: `OLLAMA_MODEL: gemma4:31b`
+6. 안정성 확인 후 야간 배치에 31B 적용
+
+**연구 기록 (가기연 과제용):**
+- TurboQuant 논문: ICLR 2026, Google DeepMind
+- 핵심: training-free, data-oblivious vector quantization
+- KV 캐시 3.25 bits/value → ~4.9x 압축 (FP16 대비)
+- 정확도 손실: 제로 (벤치마크에서 FP16과 동일)
+- VFX SOTA Monitor에서의 적용 의의:
+  - 에이전트 멀티턴 대화(5+ turns)에서 KV 캐시가 급격히 증가
+  - TurboQuant으로 동일 VRAM에서 더 긴 컨텍스트 / 더 큰 모델 운용 가능
+  - 실무 VFX 파이프라인에서 로컬 LLM 에이전트의 실용성 입증
+
+</details>
 
 ## 검증 방법
 
