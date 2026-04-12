@@ -20,16 +20,24 @@ youtube_channels:
     tags: [ai, deep-dive, research]
 max_per_channel: 5
 
-# ─── X/Twitter 계정 (nitter RSS → Crawl4AI fallback) ───────
+# ─── X/Twitter (fxtwitter API, 트윗 ID 기반) ───────────────
+# 트윗 내용은 api.fxtwitter.com으로 읽음 (API 키 불필요).
+# 트윗 ID 발견 경로:
+#   1. 아래 tweet_urls에 직접 등록
+#   2. Reddit/HF 등 다른 피드에서 x.com 링크 자동 수확
 x_accounts:
   - handle: "_akhaliq"
     tags: [ai, paper, daily]
+    tweet_urls: []  # 수동으로 트윗 URL 추가 가능
   - handle: "multimodalart"
     tags: [huggingface, demo, model]
+    tweet_urls: []
   - handle: "aaborochin"
     tags: [comfyui, workflow]
+    tweet_urls: []
   - handle: "jonstephens85"
     tags: [3dgs, gaussian-splatting]
+    tweet_urls: []
 max_per_account: 10
 
 # ─── HuggingFace 트렌딩 (공식 API) ─────────────────────────
