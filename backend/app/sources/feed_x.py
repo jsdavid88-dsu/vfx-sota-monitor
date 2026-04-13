@@ -1,183 +1,162 @@
-"""X/Twitter feed source — fxtwitter API for content, multiple discovery methods.
-
-Strategy:
-1. Discover tweet IDs from known sources:
-   - HF daily papers (authors often tweet their papers)
-   - Reddit crossposts with x.com links
-   - Manual tweet URLs from feed_queries.yaml
-2. Fetch each tweet via api.fxtwitter.com (no API key needed)
-3. Return structured feed items
-
-This avoids needing X login or API keys entirely.
-"""
+# X/Twitter feed — Playwright with saved login session.
+# No API key, no fxtwitter. Direct browser scraping with persistent auth.
+#
+# Setup: run scripts/x_login_setup.py once to save login session.
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
 from datetime import datetime, timezone
-
-import httpx
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-TWEET_URL_RE = re.compile(r"(?:x|twitter)\.com/(\w+)/status/(\d+)")
+PROFILE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "x_browser_profile"
 
 
-def _fetch_tweet_fxtwitter(handle: str, tweet_id: str) -> dict | None:
-    """Fetch a single tweet via api.fxtwitter.com → structured dict."""
-    url = f"https://api.fxtwitter.com/{handle}/status/{tweet_id}"
+async def _scrape_x_profile(url: str, max_tweets: int = 10) -> list[dict]:
+    """Scrape tweets from an X profile page using saved session."""
+    if not PROFILE_DIR.exists():
+        logger.warning("X browser profile not found. Run scripts/x_login_setup.py first.")
+        return []
+
     try:
-        r = httpx.get(url, timeout=15, follow_redirects=True)
-        if r.status_code != 200:
-            return None
+        from playwright.async_api import async_playwright
 
-        data = r.json()
-        tweet = data.get("tweet") or {}
-        if not tweet:
-            return None
-
-        text = tweet.get("text") or ""
-        author = tweet.get("author") or {}
-        handle = author.get("screen_name") or handle
-        name = author.get("name") or handle
-
-        # Parse timestamp
-        published_at = None
-        created = tweet.get("created_at") or tweet.get("created_timestamp")
-        if created:
-            try:
-                if isinstance(created, (int, float)):
-                    published_at = datetime.fromtimestamp(int(created), tz=timezone.utc)
-                else:
-                    published_at = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
-            except (ValueError, TypeError):
-                pass
-
-        # Media
-        media = tweet.get("media") or {}
-        image_url = None
-        if media.get("photos"):
-            image_url = media["photos"][0].get("url")
-        elif media.get("videos"):
-            image_url = media["videos"][0].get("thumbnail_url")
-
-        return {
-            "source": "x",
-            "external_id": tweet_id,
-            "url": tweet.get("url") or f"https://x.com/{handle}/status/{tweet_id}",
-            "title": text[:200] if text else f"@{handle}",
-            "excerpt": text[:1000] or None,
-            "content_md": text,
-            "image_url": image_url,
-            "author": f"@{handle}" + (f" ({name})" if name != handle else ""),
-            "published_at": published_at,
-            "tags": ["x"],
-            "feed_metadata": {
-                "handle": handle,
-                "likes": tweet.get("likes", 0),
-                "retweets": tweet.get("retweets", 0),
-                "replies": tweet.get("replies", 0),
-                "views": tweet.get("views", 0),
-            },
-        }
-    except Exception as e:
-        logger.warning(f"fxtwitter fetch failed for {tweet_id}: {e}")
-        return None
-
-
-def _discover_tweet_ids_from_explicit(accounts: list[dict]) -> list[tuple[str, str]]:
-    """Extract explicit tweet_urls from config."""
-    pairs = []
-    for acc in accounts:
-        for url in acc.get("tweet_urls", []):
-            m = TWEET_URL_RE.search(url)
-            if m:
-                pairs.append((m.group(1), m.group(2)))
-    return pairs
-
-
-def _discover_tweet_ids_from_feed_items() -> list[tuple[str, str]]:
-    """Scan existing feed_items for x.com links (from Reddit, HF, etc.)."""
-    try:
-        import asyncio
-        from sqlalchemy import select, text
-        from app.database import SessionLocal
-        from app.models import FeedItem
-
-        async def _scan():
-            async with SessionLocal() as db:
-                # Look for x.com links in feed items from other sources
-                stmt = text("""
-                    SELECT url, excerpt, content_md FROM feed_items
-                    WHERE source != 'x'
-                    ORDER BY discovered_at DESC LIMIT 200
-                """)
-                rows = (await db.execute(stmt)).fetchall()
-                pairs = []
-                for url, excerpt, content in rows:
-                    for text_field in [url or "", excerpt or "", content or ""]:
-                        for m in TWEET_URL_RE.finditer(text_field):
-                            pairs.append((m.group(1), m.group(2)))
-                return pairs
+        pw = await async_playwright().start()
+        browser = await pw.chromium.launch_persistent_context(
+            user_data_dir=str(PROFILE_DIR),
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"],
+            ignore_default_args=["--enable-automation"],
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+        )
+        page = browser.pages[0] if browser.pages else await browser.new_page()
 
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        except Exception:
+            pass
+        await asyncio.sleep(5)
 
-        if loop and loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                return pool.submit(lambda: asyncio.run(_scan())).result()
-        else:
-            return asyncio.run(_scan())
+        # Scroll to load more tweets
+        for _ in range(3):
+            await page.evaluate("window.scrollBy(0, 2000)")
+            await asyncio.sleep(2)
+
+        # Extract tweet data from article elements
+        tweets = await page.query_selector_all('article[data-testid="tweet"]')
+        results = []
+
+        for tw in tweets[:max_tweets]:
+            try:
+                # Text
+                text_el = await tw.query_selector('div[data-testid="tweetText"]')
+                text = await text_el.inner_text() if text_el else ""
+
+                # Author
+                author_el = await tw.query_selector('div[data-testid="User-Name"] a')
+                author_href = await author_el.get_attribute("href") if author_el else ""
+                handle = author_href.strip("/").split("/")[-1] if author_href else ""
+
+                # Tweet link (for ID)
+                time_el = await tw.query_selector("time")
+                time_parent = await time_el.evaluate_handle("el => el.parentElement") if time_el else None
+                tweet_href = ""
+                if time_parent:
+                    tweet_href = await time_parent.get_attribute("href") or ""
+
+                tweet_id = ""
+                m = re.search(r"/status/(\d+)", tweet_href)
+                if m:
+                    tweet_id = m.group(1)
+                else:
+                    tweet_id = hashlib.sha1(text[:100].encode()).hexdigest()[:16]
+
+                # Timestamp
+                published_at = None
+                if time_el:
+                    dt_str = await time_el.get_attribute("datetime")
+                    if dt_str:
+                        try:
+                            published_at = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                        except ValueError:
+                            pass
+
+                # Image
+                img_el = await tw.query_selector('img[src*="pbs.twimg.com/media"]')
+                image_url = await img_el.get_attribute("src") if img_el else None
+
+                if text:
+                    results.append({
+                        "text": text[:1000],
+                        "handle": handle,
+                        "tweet_id": tweet_id,
+                        "published_at": published_at,
+                        "image_url": image_url,
+                        "tweet_url": f"https://x.com/{handle}/status/{tweet_id}" if handle and tweet_id else url,
+                    })
+            except Exception as e:
+                logger.debug(f"Tweet parse error: {e}")
+                continue
+
+        await browser.close()
+        await pw.stop()
+        return results
+
     except Exception as e:
-        logger.warning(f"Tweet discovery from feed_items failed: {e}")
+        logger.warning(f"X scrape failed for {url}: {e}")
         return []
 
 
 def fetch_x_feed(accounts: list[dict], max_per_account: int = 10) -> list[dict]:
-    """Fetch tweets from X via fxtwitter.
+    """Fetch tweets from X accounts using Playwright with saved session."""
+    all_items: list[dict] = []
 
-    Discovery sources:
-    1. Explicit tweet_urls in config
-    2. x.com links found in other feed items (Reddit posts, HF papers, etc.)
-    """
-    # Collect all tweet IDs to fetch
-    all_pairs: list[tuple[str, str]] = []
+    async def _run():
+        for acc in accounts:
+            handle = acc.get("handle", "")
+            tags = acc.get("tags", [])
+            if not handle:
+                continue
 
-    # From explicit config
-    all_pairs.extend(_discover_tweet_ids_from_explicit(accounts))
+            url = f"https://x.com/{handle}"
+            tweets = await _scrape_x_profile(url, max_tweets=max_per_account)
 
-    # From existing feed items (cross-posted links)
-    all_pairs.extend(_discover_tweet_ids_from_feed_items())
+            for tw in tweets:
+                all_items.append({
+                    "source": "x",
+                    "external_id": tw["tweet_id"],
+                    "url": tw["tweet_url"],
+                    "title": tw["text"][:200],
+                    "excerpt": tw["text"][:1000] if len(tw["text"]) > 200 else None,
+                    "content_md": tw["text"],
+                    "image_url": tw["image_url"],
+                    "author": f"@{tw['handle']}" if tw["handle"] else f"@{handle}",
+                    "published_at": tw["published_at"],
+                    "tags": ["x"] + tags,
+                    "feed_metadata": {
+                        "handle": tw["handle"] or handle,
+                        "source_account": handle,
+                        "via": "playwright",
+                    },
+                })
 
-    # Dedupe by tweet_id
-    seen = set()
-    unique_pairs = []
-    for handle, tid in all_pairs:
-        if tid not in seen:
-            seen.add(tid)
-            unique_pairs.append((handle, tid))
+            logger.info(f"X @{handle}: {len(tweets)} tweets")
 
-    # Fetch via fxtwitter
-    items: list[dict] = []
-    target_handles = {acc.get("handle", "").lower() for acc in accounts}
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
 
-    for handle, tid in unique_pairs:
-        # If we have target accounts, prioritize those
-        item = _fetch_tweet_fxtwitter(handle, tid)
-        if item:
-            # Add account-specific tags
-            for acc in accounts:
-                if acc.get("handle", "").lower() == handle.lower():
-                    item["tags"] = ["x"] + acc.get("tags", [])
-                    break
-            items.append(item)
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            pool.submit(lambda: asyncio.run(_run())).result()
+    else:
+        asyncio.run(_run())
 
-        if len(items) >= max_per_account * len(accounts):
-            break
-
-    logger.info(f"X feed: {len(items)} tweets ({len(unique_pairs)} discovered)")
-    return items
+    logger.info(f"X feed: {len(all_items)} tweets from {len(accounts)} accounts")
+    return all_items
