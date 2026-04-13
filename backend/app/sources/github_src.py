@@ -1,51 +1,105 @@
-"""GitHub source — recent repositories matching VFX category keywords.
-
-Uses PyGithub with optional GITHUB_TOKEN for higher rate limits.
-"""
+# GitHub source — Crawl4AI based (no API key, no rate limit).
+# Searches github.com directly and extracts repo info.
 from __future__ import annotations
 
+import asyncio
 import logging
-import time
+import os
+import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote_plus
 
-from github import Auth, Github, GithubException
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
-from app.config import settings
+import httpx
 from app.sources.base import FetchedItem
 
 logger = logging.getLogger(__name__)
 
+# GitHub navigation/feature paths to exclude
+GITHUB_NOISE_OWNERS = {
+    "features", "enterprise", "pricing", "security", "customer-stories",
+    "readme", "topics", "collections", "trending", "explore", "search",
+    "login", "signup", "settings", "notifications", "marketplace",
+    "sponsors", "orgs", "codespaces", "copilot", "solutions", "resources",
+    "about", "team", "blog", "contact", "events", "education",
+}
+GITHUB_NOISE_REPOS = {
+    "industry", "use-case", "articles", "events", "whitepapers",
+    "executive-insights", "startups",
+}
 
-def _get_client() -> Github:
-    if settings.github_token:
-        return Github(auth=Auth.Token(settings.github_token), per_page=30)
-    return Github(per_page=30)
+
+def _is_real_repo(name: str) -> bool:
+    """Filter out GitHub UI links that look like repos but aren't."""
+    parts = name.split("/")
+    if len(parts) != 2:
+        return False
+    owner, repo = parts
+    if owner.lower() in GITHUB_NOISE_OWNERS:
+        return False
+    if repo.lower() in GITHUB_NOISE_REPOS:
+        return False
+    if "?" in name or "#" in name:
+        return False
+    if repo.startswith("articles") or repo.startswith("topic="):
+        return False
+    return True
 
 
-def _build_query(keywords: list[str], topics: list[str], days_back: int) -> str:
-    """Build a GitHub search query from category keywords/topics.
+async def _search_github_crawl4ai(query: str, max_results: int = 20) -> list[str]:
+    """Search GitHub repos via Google (site:github.com) — avoids GitHub login wall."""
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 
-    Keywords and topics are combined with OR (not AND) so a repo matching
-    either set will be found. GitHub repos often lack topic tags.
-    """
-    kw_parts = []
-    for kw in keywords[:5]:
-        if " " in kw:
-            kw_parts.append(f'"{kw}"')
-        else:
-            kw_parts.append(kw)
+    search_url = (
+        f"https://www.google.com/search?q=site:github.com+{quote_plus(query)}"
+        f"&num={max_results * 2}"
+    )
 
-    # topic: qualifier combined with OR breaks GitHub search — use keywords only
-    # Topics from categories are often also in repo names/descriptions anyway
-    for t in topics[:3]:
-        kw_parts.append(t.replace("-", " "))
+    try:
+        cfg = BrowserConfig(headless=True, verbose=False)
+        run_cfg = CrawlerRunConfig(verbose=False, word_count_threshold=10)
+        async with AsyncWebCrawler(config=cfg) as crawler:
+            result = await crawler.arun(url=search_url, config=run_cfg)
+            if not result.success:
+                logger.warning(f"GitHub search crawl failed: {result.error_message}")
+                return []
 
-    since_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).date().isoformat()
+            links = result.links or {}
+            all_links = links.get("external", [])
+            repos = []
+            seen = set()
+            for link in all_links:
+                href = link.get("href", "")
+                m = re.match(r"https?://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", href)
+                if m:
+                    name = m.group(1)
+                    if name not in seen and _is_real_repo(name):
+                        seen.add(name)
+                        repos.append(name)
+                if len(repos) >= max_results:
+                    break
 
-    query = " OR ".join(kw_parts) if kw_parts else ""
-    query += f" pushed:>={since_date} stars:>=5"
+            return repos
+    except Exception as e:
+        logger.warning(f"GitHub crawl search failed: {e}")
+        return []
 
-    return query.strip()
+
+def _fetch_repo_info(full_name: str) -> dict | None:
+    """Fetch repo metadata via GitHub's public JSON (no auth needed)."""
+    try:
+        r = httpx.get(
+            f"https://api.github.com/repos/{full_name}",
+            timeout=10,
+            headers={"Accept": "application/vnd.github.v3+json"},
+        )
+        if r.status_code == 200:
+            return r.json()
+        # Rate limited or not found — use basic info
+        return None
+    except Exception:
+        return None
 
 
 def fetch_github(
@@ -54,58 +108,84 @@ def fetch_github(
     days_back: int = 7,
     max_results: int = 30,
 ) -> list[FetchedItem]:
-    """Search GitHub for repositories matching keywords/topics.
-
-    Note: GitHub search API allows ~30 req/min authenticated.
-    Caller should sleep between category calls.
-    """
+    """Search GitHub for repositories via Crawl4AI web scraping."""
     keywords = keywords or []
     topics = topics or []
     if not keywords and not topics:
         return []
 
-    query = _build_query(keywords, topics, days_back)
-    logger.info(f"GitHub query: {query}")
+    # Build search query
+    kw_parts = []
+    for kw in keywords[:5]:
+        if " " in kw:
+            kw_parts.append(f'"{kw}"')
+        else:
+            kw_parts.append(kw)
+    for t in topics[:3]:
+        kw_parts.append(t.replace("-", " "))
 
-    items: list[FetchedItem] = []
+    query = " ".join(kw_parts) + " stars:>10"
+    logger.info(f"GitHub search (Crawl4AI): {query}")
+
+    # Run async search
     try:
-        g = _get_client()
-        results = g.search_repositories(query=query, sort="stars", order="desc")
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
 
-        for i, repo in enumerate(results):
-            if i >= max_results:
-                break
-            try:
-                pushed = repo.pushed_at
-                if pushed and pushed.tzinfo is None:
-                    pushed = pushed.replace(tzinfo=timezone.utc)
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            repo_names = pool.submit(
+                lambda: asyncio.run(_search_github_crawl4ai(query, max_results))
+            ).result()
+    else:
+        repo_names = asyncio.run(_search_github_crawl4ai(query, max_results))
 
-                items.append(
-                    FetchedItem(
-                        source="github",
-                        external_id=repo.full_name,
-                        url=repo.html_url,
-                        title=repo.name,
-                        abstract=repo.description or "",
-                        authors=repo.owner.login if repo.owner else None,
-                        published_at=pushed,
-                        metadata={
-                            "stars": repo.stargazers_count,
-                            "forks": repo.forks_count,
-                            "language": repo.language,
-                            "topics": repo.get_topics() if callable(getattr(repo, "get_topics", None)) else [],
-                            "open_issues": repo.open_issues_count,
-                        },
-                    )
-                )
-            except GithubException as e:
-                logger.warning(f"GitHub repo parse failed: {e}")
-                continue
-    except GithubException as e:
-        logger.error(f"GitHub search failed: {e}")
-        return items
+    logger.info(f"GitHub: found {len(repo_names)} repos")
 
-    # Tiny sleep to stay under secondary rate limits
-    time.sleep(0.5)
-    logger.info(f"GitHub: {len(items)} repos")
+    # Fetch details for each repo (via API if available, basic if rate limited)
+    items: list[FetchedItem] = []
+    for name in repo_names[:max_results]:
+        info = _fetch_repo_info(name)
+
+        if info:
+            pushed = info.get("pushed_at")
+            published_at = None
+            if pushed:
+                try:
+                    published_at = datetime.fromisoformat(pushed.replace("Z", "+00:00"))
+                except ValueError:
+                    pass
+
+            items.append(FetchedItem(
+                source="github",
+                external_id=info.get("full_name", name),
+                url=info.get("html_url", f"https://github.com/{name}"),
+                title=info.get("name", name.split("/")[-1]),
+                abstract=info.get("description") or "",
+                authors=info.get("owner", {}).get("login", ""),
+                published_at=published_at,
+                metadata={
+                    "stars": info.get("stargazers_count", 0),
+                    "forks": info.get("forks_count", 0),
+                    "language": info.get("language"),
+                    "topics": info.get("topics", []),
+                    "license": (info.get("license") or {}).get("spdx_id"),
+                },
+            ))
+        else:
+            # Basic info without API (rate limited)
+            items.append(FetchedItem(
+                source="github",
+                external_id=name,
+                url=f"https://github.com/{name}",
+                title=name.split("/")[-1],
+                abstract="",
+                authors=name.split("/")[0],
+                published_at=None,
+                metadata={"stars": 0},
+            ))
+
+    logger.info(f"GitHub: {len(items)} repos fetched")
     return items
